@@ -1,0 +1,7 @@
+// Our first .aa program
+// This program will add two numbers and print the result
+
+var x = 5
+var y = 10
+result = x + y
+print(result)
