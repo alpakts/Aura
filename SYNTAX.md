@@ -45,17 +45,46 @@ print(x + y)
 ```
 
 ## 5. Veri Tipleri
-Şu an için derleyici **Tam Sayı (Integer)** veri tipini tam olarak desteklemektedir.
+Derleyici şu an aşağıdaki veri tiplerini tam olarak desteklemektedir:
 
-* **Integer**: `0`, `10`, `-5` gibi tam sayılar.
-* **String**: `"Merhaba"` (Sözdizimsel olarak tanınır ancak henüz makine koduna derlenmez - Geliştiriliyor 🚧).
+* **Integer (Tam Sayı)**: `0`, `10`, `-5` gibi tam sayılar.
+* **String (Metin)**: `"Merhaba Dünya"` gibi çift tırnak içindeki metinler.
 
-## 💡 Tam Örnek Program
+## 6. Koşullu İfadeler (If / Else)
+Karar mekanizmaları için `if`, `else if` ve `else` blokları kullanılır. Bloklar `{` ve `}` süslü parantezleri ile tanımlanır.
+
+**Desteklenen Karşılaştırma Operatörleri:**
+* `==` : Eşittir
+* `!=` : Eşit Değildir
+* `<`  : Küçüktür
+* `>`  : Büyüktür
+* `<=` : Küçük Eşittir
+* `>=` : Büyük Eşittir
 
 ```aa
-// İki sayıyı toplayıp yazdıran program
-var not1 = 50
-var not2 = 80
-ortalama = (not1 + not2) / 2
+var not = 75
+
+if (not >= 50) {
+    print("Gectiniz")
+} else {
+    print("Kaldiniz")
+}
+```
+
+## 7. Tam Örnek Program
+
+```aa
+// Not Hesaplama ve Karar Verme
+var vize = 60
+var final = 70
+var ortalama = (vize + final) / 2
+
+print("Ortalama:")
 print(ortalama)
+
+if (ortalama > 50) {
+    print("Basarili")
+} else {
+    print("Basarisiz")
+}
 ```

@@ -1,7 +1,24 @@
-// Test program for .aa language
-// Simple arithmetic operations
+// .aa Dili Gelişmiş If-Else If-Else Testi
 
-var x = 5
-var y = 10
-result = x + y
-print(result)
+var not = 75
+print("Ogrenci Notu:")
+print(not)
+
+if (not > 90) {
+    print("Derece: AA")
+} else {
+    // Else içinde yeni bir IF (Else-If mantığı)
+    if (not > 70) {
+        print("Derece: BB")
+    } else {
+        if (not > 50) {
+            print("Derece: CC")
+        } else {
+            print("Durum: Kaldiniz")
+        }
+    }
+}
+
+// Bitiş kontrolü
+var kontrol = 1
+if (kontrol == 1) { print("Program basariyla tamamlandi.") }
