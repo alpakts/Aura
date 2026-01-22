@@ -1,5 +1,5 @@
-// Our first .aa program
-// This program will add two numbers and print the result
+// Test program for .aa language
+// Simple arithmetic operations
 
 var x = 5
 var y = 10
