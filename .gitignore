@@ -1,1 +1,5 @@
 /target
+/.vs
+test.exe
+test.ll
+test.aa
