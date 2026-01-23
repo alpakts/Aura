@@ -3,7 +3,7 @@
   "patterns": [
     {
       "comment": "Keywords",
-      "match": "\\b(var|print|if|else|while|for|foreach|in|return|import|class|new)\\b",
+      "match": "\\b(var|print|if|else|while|for|foreach|in|return|import|class|new|this)\\b",
       "name": "keyword.control.aura"
     },
     {

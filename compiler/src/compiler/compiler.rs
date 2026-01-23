@@ -24,6 +24,7 @@ pub struct Compiler {
     is_in_function: bool, 
     
     classes: HashMap<String, Vec<String>>, // ClassName -> [FieldNames]
+    current_class: Option<String>,
 }
 
 impl Compiler {
@@ -39,6 +40,7 @@ impl Compiler {
             var_types: HashMap::new(),
             is_in_function: false,
             classes: HashMap::new(),
+            current_class: None,
         }
     }
 
@@ -86,21 +88,19 @@ impl Compiler {
                 panic!("Array Literal can only be used in variable declaration!");
             }
             Expr::Variable(name) => {
-                let reg = self.get_reg();
-                let vtype = self.var_types.get(name).expect(&format!("Undefined variable: {}", name)).clone();
-                match &vtype { 
-                    VarType::Int => {
-                        self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name));
-                    }, 
-                    VarType::Str => {
-                        self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name));
-                    },
-                    VarType::Instance(cls) => {
-                        self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name));
-                    },
-                    VarType::Array(_) => panic!("Arrays can only be accessed via index: {}[0]", name),
+                let vtype_opt = self.var_types.get(name).cloned();
+                if let Some(vtype) = vtype_opt {
+                    let reg = self.get_reg();
+                    match &vtype { 
+                        VarType::Int => { self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name)); }, 
+                        VarType::Str => { self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name)); },
+                        VarType::Instance(cls) => { self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name)); },
+                        VarType::Array(_) => panic!("Arrays can only be accessed via index: {}[0]", name),
+                    }
+                    (reg, vtype)
+                } else {
+                    panic!("Undefined variable: {}", name);
                 }
-                (reg, vtype)
             }
             Expr::New(class_name) => {
                 if let Some(fields) = self.classes.get(class_name) {
@@ -165,6 +165,30 @@ impl Compiler {
                      (val_reg, VarType::Int)
                  } else { panic!("'{}' is not an array!", name); }
             }
+            Expr::MethodCall(obj_expr, method_name, args) => {
+                let (obj_val, obj_type) = self.compile_expr(obj_expr);
+                if let VarType::Instance(class_name) = obj_type {
+                    // Mangled name: Class_Method
+                    let func_name = format!("{}_{}", class_name, method_name);
+                    
+                    let mut arg_vals = Vec::new();
+                    // Pass 'this' as first argument
+                    arg_vals.push(format!("%struct.{}* {}", class_name, obj_val));
+
+                    for arg in args {
+                        let (val, _) = self.compile_expr(arg);
+                        arg_vals.push(format!("i32 {}", val)); // Simplify: assume i32 args
+                    }
+                    
+                    let args_str = arg_vals.join(", ");
+                    let reg = self.get_reg();
+                    // Assume methods return i32 for now
+                    self.emit(&format!("  {} = call i32 @{}({})\n", reg, func_name, args_str));
+                    (reg, VarType::Int)
+                } else {
+                    panic!("Method calls only supported on class instances.");
+                }
+            },
             Expr::Call(name, args) => {
                 if name == "print_str" {
                      let (val, _) = self.compile_expr(&args[0]);
@@ -241,9 +265,30 @@ impl Compiler {
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::ClassDecl(name, fields) => {
-                // Register class. Struct def is generated in main compile loop/header.
+            Stmt::ClassDecl(name, fields, methods) => {
+                // Register class properties
                 self.classes.insert(name.clone(), fields.clone());
+                
+                // Set context
+                self.current_class = Some(name.clone());
+
+                // Compile methods
+                for method in methods {
+                    let method_clone = method.clone();
+                    if let Stmt::FuncDecl(method_name, mut args, body) = method_clone {
+                        // 1. Mangle Name: Class_Method
+                        let mangled_name = format!("{}_{}", name, method_name);
+                        
+                        // 2. Inject 'this' argument
+                        args.insert(0, "this".to_string());
+                        
+                        // 3. Compile as standard function
+                        self.compile_stmt(&Stmt::FuncDecl(mangled_name, args.clone(), body.to_vec()));
+                    }
+                }
+                
+                // Clear context
+                self.current_class = None;
             },
             Stmt::FuncDecl(name, args, body) => {
                 let old_in_func = self.is_in_function;
@@ -253,15 +298,32 @@ impl Compiler {
                 self.var_types.clear(); 
 
                 let mut arg_defs = Vec::new();
-                for (i, _) in args.iter().enumerate() {
-                    arg_defs.push(format!("i32 %arg{}", i)); 
+                for (i, arg_name) in args.iter().enumerate() {
+                    if arg_name == "this" {
+                        if let Some(cls_name) = self.current_class.clone() {
+                             arg_defs.push(format!("%struct.{}* %arg{}", cls_name, i));
+                        } else {
+                             // Should not happen if 'this' is only injected by us
+                             panic!("'this' argument found outside of class context");
+                        }
+                    } else {
+                        arg_defs.push(format!("i32 %arg{}", i)); 
+                    }
                 }
                 self.output.push_str(&format!("\ndefine i32 @{}({}) {{\nentry:\n", name, arg_defs.join(", ")));
                 
                 for (i, arg_name) in args.iter().enumerate() {
-                    self.current_output.push_str(&format!("  %{}_ptr = alloca i32\n", arg_name));
-                    self.current_output.push_str(&format!("  store i32 %arg{}, i32* %{}_ptr\n", i, arg_name));
-                    self.var_types.insert(arg_name.clone(), VarType::Int);
+                    if arg_name == "this" {
+                         if let Some(cls_name) = self.current_class.clone() {
+                             self.current_output.push_str(&format!("  %{}_ptr = alloca %struct.{}*\n", arg_name, cls_name));
+                             self.current_output.push_str(&format!("  store %struct.{}* %arg{}, %struct.{}** %{}_ptr\n", cls_name, i, cls_name, arg_name));
+                             self.var_types.insert(arg_name.clone(), VarType::Instance(cls_name));
+                         }
+                    } else {
+                        self.current_output.push_str(&format!("  %{}_ptr = alloca i32\n", arg_name));
+                        self.current_output.push_str(&format!("  store i32 %arg{}, i32* %{}_ptr\n", i, arg_name));
+                        self.var_types.insert(arg_name.clone(), VarType::Int);
+                    }
                 }
                 
                 self.compile_block(body);
@@ -386,7 +448,7 @@ impl Compiler {
         // Note: recursion/nested blocks might hide class decls if not top level.
         // For now, only Top Level classes supported.
         for stmt in stmts {
-            if let Stmt::ClassDecl(name, fields) = stmt {
+            if let Stmt::ClassDecl(name, fields, _) = stmt {
                 self.classes.insert(name.clone(), fields.clone());
             }
         }

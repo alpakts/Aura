@@ -21,5 +21,12 @@ import "class_test.aur";
 // calc.result = prod;
 // print(calc.result);
 
-var class_test = new Point();
-class_test.main();
+var p1 = new Point();
+p1.y = 20;
+p1.x = p1.y;
+p1.y = 30;
+
+print("Point 1 X:");
+print(p1.x);
+print("Sum of 10 and 20:");
+print(p1.sum(10,20));

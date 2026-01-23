@@ -1,6 +1,6 @@
 use crate::compiler::lexer::{Token, TokenType, Lexer}; // Updated import to include Lexer
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Number(i32), 
     String(String), 
@@ -12,9 +12,10 @@ pub enum Expr {
     New(String), // new ClassName()
     Get(Box<Expr>, String), // obj.field
     Set(Box<Expr>, String, Box<Expr>), // obj.field = val
+    MethodCall(Box<Expr>, String, Vec<Expr>), // obj.method(args)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     VarDecl(String, Expr), 
     Assignment(String, Expr), 
@@ -23,7 +24,7 @@ pub enum Stmt {
     WhileStmt(Expr, Vec<Stmt>),
     BlockStmt(Vec<Stmt>), 
     FuncDecl(String, Vec<String>, Vec<Stmt>), 
-    ClassDecl(String, Vec<String>), // class Name { var f1; var f2; }
+    ClassDecl(String, Vec<String>, Vec<Stmt>), // class Name { var f1; methods... }
     ReturnStmt(Option<Expr>),
     ExprStmt(Expr), 
 }
@@ -110,6 +111,10 @@ impl Parser {
                     
                     if let Expr::Variable(name) = expr {
                         expr = Expr::Call(name, args);
+                    } else if let Expr::Get(obj, method_name) = expr {
+                        // Support obj.method()
+                        // treated as a MethodCall
+                        expr = Expr::MethodCall(obj, method_name, args);
                     } else {
                         // For now we only support calling named functions directly, 
                         // but technically `obj.method()` could be supported via this or similar.
@@ -117,7 +122,7 @@ impl Parser {
                         // Actually, if we add methods later, `Expr::Get` might need to be handled here.
                         // For this iteration: just wrap it. 
                         // Note: Compiler needs to handle Call on non-Variable if we want `(get_func())()`
-                        panic!("Function call only supported on identifiers for now");
+                        panic!("Function call only supported on identifiers or field access (methods) for now. Got: {:?}", expr);
                     }
                 },
                 TokenType::LBracket => {
@@ -199,20 +204,37 @@ impl Parser {
                 let name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Expected class name") };
                 self.consume(TokenType::LBrace, "Expected '{'");
                 let mut fields = Vec::new();
+                let mut methods = Vec::new();
                 while self.peek().kind != TokenType::RBrace && self.peek().kind != TokenType::EOF {
-                    // Parse "var fieldName;"
-                    if let TokenType::Var = self.peek().kind {
-                        self.advance();
-                        if let TokenType::Id(f_name) = self.advance().kind {
-                            self.consume(TokenType::Semicolon, "Expected ';'");
-                            fields.push(f_name);
-                        } else { panic!("Expected field name"); }
-                    } else {
-                        panic!("Only variables allowed in class definition for now");
+                    match self.peek().kind {
+                        TokenType::Var => {
+                            self.advance();
+                            if let TokenType::Id(f_name) = self.advance().kind {
+                                self.consume(TokenType::Semicolon, "Expected ';'");
+                                fields.push(f_name);
+                            } else { panic!("Expected field name"); }
+                        },
+                        TokenType::Func => {
+                             self.advance(); // func
+                             let func_name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Function name missing") };
+                             self.consume(TokenType::LParen, "Expected '('");
+                             let mut args = Vec::new();
+                             if self.peek().kind != TokenType::RParen {
+                                 if let TokenType::Id(arg) = self.advance().kind { args.push(arg); }
+                                 while self.peek().kind == TokenType::Comma {
+                                     self.advance();
+                                     if let TokenType::Id(arg) = self.advance().kind { args.push(arg); }
+                                 }
+                             }
+                             self.consume(TokenType::RParen, "Expected ')'");
+                             let body = self.parse_block();
+                             methods.push(Stmt::FuncDecl(func_name, args, body));
+                        },
+                        _ => panic!("Only variables and functions allowed in class definition. Got: {:?}", self.peek().kind),
                     }
                 }
                 self.consume(TokenType::RBrace, "Expected '}'");
-                Stmt::ClassDecl(name, fields)
+                Stmt::ClassDecl(name, fields, methods)
             }
             TokenType::Import => { 
                 // ... (Existing Import Logic)
