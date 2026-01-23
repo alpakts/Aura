@@ -3,11 +3,12 @@
 pub enum TokenType {
     Var, Print, If, Else,
     While, For, Foreach, In, 
-    Func, Return, Import, // <-- Added Import
+    Func, Return, Import, 
+    Class, New, // Class support
     Id(String), Number(i32), String(String), 
     Assign, Plus, Minus, Mul, Div, 
     LParen, RParen, LBrace, RBrace, // { }
-    LBracket, RBracket, Comma, Semicolon,     // [ ] , ;
+    LBracket, RBracket, Comma, Semicolon, Dot, // [ ] , ; .
     Eq, Neq, Lt, Gt, Lte, Gte,      // == != < > <= >=
     EOF,
 }
@@ -57,6 +58,7 @@ impl Lexer {
         let mut tokens = Vec::new();
         while let Some(c) = { self.skip_whitespace_and_comments(); self.peek() } {
             let kind = match c {
+                '.' => { self.advance(); TokenType::Dot },
                 '=' => { 
                     self.advance(); 
                     if self.peek() == Some('=') { self.advance(); TokenType::Eq } else { TokenType::Assign }
@@ -105,7 +107,8 @@ impl Lexer {
                         "while"=>TokenType::While, "for"=>TokenType::For,
                         "foreach"=>TokenType::Foreach, "in"=>TokenType::In,
                         "func"=>TokenType::Func, "return"=>TokenType::Return,
-                        "import"=>TokenType::Import, // <-- Added "import" keyword
+                        "import"=>TokenType::Import,
+                        "class"=>TokenType::Class, "new"=>TokenType::New,
                         _=>TokenType::Id(s) 
                     }
                 },

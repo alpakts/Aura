@@ -1,0 +1,30 @@
+{
+  "name": "aura-lang",
+  "displayName": "Aura Language Support",
+  "description": "Syntax highlighting for the Aura Programming Language",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aura-lang/aura"
+  },
+  "version": "0.0.1",
+  "publisher": "aura-lang",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "aura",
+      "aliases": ["Aura", "aura"],
+      "extensions": [".aur"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "aura",
+      "scopeName": "source.aura",
+      "path": "./syntaxes/aura.tmLanguage.json"
+    }]
+  }
+}

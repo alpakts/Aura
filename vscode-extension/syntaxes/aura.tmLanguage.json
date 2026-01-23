@@ -1,0 +1,49 @@
+{
+  "scopeName": "source.aura",
+  "patterns": [
+    {
+      "comment": "Keywords",
+      "match": "\\b(var|print|if|else|while|for|foreach|in|return|import|class|new)\\b",
+      "name": "keyword.control.aura"
+    },
+    {
+      "comment": "Function Definition",
+      "match": "\\b(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.function.aura" },
+        "2": { "name": "entity.name.function.aura" }
+      }
+    },
+    {
+      "comment": "Strings",
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.aura"
+    },
+    {
+      "comment": "Numbers",
+      "match": "\\b\\d+\\b",
+      "name": "constant.numeric.aura"
+    },
+    {
+      "comment": "Comments",
+      "match": "//.*$",
+      "name": "comment.line.double-slash.aura"
+    },
+    {
+      "comment": "Types/Classes",
+      "match": "\\b[A-Z][a-zA-Z0-9_]*\\b",
+      "name": "support.class.aura"
+    },
+    {
+      "comment": "Function calls",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "name": "entity.name.function.call.aura"
+    },
+    {
+      "comment": "Operators",
+      "match": "(\\+|\\-|\\*|/|=|==|!=|<|>|<=|>=|\\.|;|,)",
+      "name": "keyword.operator.aura"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+import "math.aur";
+import "class_test.aur";
+
+// class Calculator {
+//     var result;
+// }
+
+// var calc = new Calculator();
+// calc.result = 0;
+
+// print("Initial Result:");
+// print(calc.result);
+
+// print("Adding 10 and 20:");
+// var sum = add(10, 20);
+// calc.result = sum;
+// print(calc.result);
+
+// print("Multiplying by 5:");
+// var prod = multiply(calc.result, 5);
+// calc.result = prod;
+// print(calc.result);
+
+var class_test = new Point();
+class_test.main();

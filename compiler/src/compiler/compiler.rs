@@ -3,12 +3,17 @@ use crate::compiler::lexer::TokenType;
 use crate::compiler::parser::{Expr, Stmt};
 
 #[derive(Clone, PartialEq, Debug)]
-enum VarType { Int, Str, Array(usize) }
+enum VarType { 
+    Int, 
+    Str, 
+    Array(usize),
+    Instance(String) 
+}
 
 pub struct Compiler {
     output: String,     
     main_body: String,  
-    current_output: String, 
+    current_output: String, // Buffer for functions
     
     reg_counter: i32,
     label_counter: i32,
@@ -17,6 +22,8 @@ pub struct Compiler {
     
     var_types: HashMap<String, VarType>, 
     is_in_function: bool, 
+    
+    classes: HashMap<String, Vec<String>>, // ClassName -> [FieldNames]
 }
 
 impl Compiler {
@@ -31,6 +38,7 @@ impl Compiler {
             string_literals: Vec::new(),
             var_types: HashMap::new(),
             is_in_function: false,
+            classes: HashMap::new(),
         }
     }
 
@@ -47,6 +55,11 @@ impl Compiler {
     }
 
     fn add_string(&mut self, s: String) -> String {
+        // Check if string already exists
+        if let Some((id, _, _)) = self.string_literals.iter().find(|(_, content, _)| content == &s) {
+            return format!("@str.{}", id);
+        }
+        
         let id = self.str_counter;
         let len = s.len() + 1; 
         self.string_literals.push((id, s, len));
@@ -75,17 +88,71 @@ impl Compiler {
             Expr::Variable(name) => {
                 let reg = self.get_reg();
                 let vtype = self.var_types.get(name).expect(&format!("Undefined variable: {}", name)).clone();
-                match vtype { 
+                match &vtype { 
                     VarType::Int => {
                         self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name));
-                        (reg, vtype)
                     }, 
                     VarType::Str => {
                         self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name));
-                        (reg, vtype)
+                    },
+                    VarType::Instance(cls) => {
+                        self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name));
                     },
                     VarType::Array(_) => panic!("Arrays can only be accessed via index: {}[0]", name),
                 }
+                (reg, vtype)
+            }
+            Expr::New(class_name) => {
+                if let Some(fields) = self.classes.get(class_name) {
+                    let field_count = fields.len();
+                    // Assuming all fields are i32 (4 bytes). Struct size = 4 * count.
+                    // Note: This is simplified. Real structs need alignment etc.
+                    let size = field_count * 4; 
+                    
+                    let malloc_reg = self.get_reg();
+                    self.emit(&format!("  {} = call i8* @malloc(i32 {})\n", malloc_reg, size));
+                    
+                    let cast_reg = self.get_reg();
+                    self.emit(&format!("  {} = bitcast i8* {} to %struct.{}*\n", cast_reg, malloc_reg, class_name));
+                    
+                    (cast_reg, VarType::Instance(class_name.clone()))
+                } else {
+                    panic!("Unknown class: {}", class_name);
+                }
+            }
+            Expr::Get(obj_expr, field_name) => {
+                let (obj_reg, vtype) = self.compile_expr(obj_expr);
+                if let VarType::Instance(class_name) = vtype {
+                     let fields = self.classes.get(&class_name).unwrap();
+                     let index = fields.iter().position(|r| r == field_name)
+                        .expect(&format!("Field '{}' not found in class '{}'", field_name, class_name));
+                     
+                     let gep_reg = self.get_reg();
+                     // Access field at index
+                     self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", 
+                         gep_reg, class_name, class_name, obj_reg, index));
+                     
+                     let val_reg = self.get_reg();
+                     self.emit(&format!("  {} = load i32, i32* {}\n", val_reg, gep_reg));
+                     (val_reg, VarType::Int) // Assuming fields are all Int
+                } else { panic!("Property access on non-object"); }
+            }
+            Expr::Set(obj_expr, field_name, val_expr) => {
+                let (obj_reg, vtype) = self.compile_expr(obj_expr);
+                if let VarType::Instance(class_name) = vtype {
+                     let fields = self.classes.get(&class_name).unwrap();
+                     let index = fields.iter().position(|r| r == field_name)
+                        .expect(&format!("Field '{}' not found in class '{}'", field_name, class_name));
+                     
+                     let (val_reg, _) = self.compile_expr(val_expr);
+                     
+                     let gep_reg = self.get_reg();
+                     self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", 
+                         gep_reg, class_name, class_name, obj_reg, index));
+                     
+                     self.emit(&format!("  store i32 {}, i32* {}\n", val_reg, gep_reg));
+                     (val_reg, VarType::Int)
+                } else { panic!("Property set on non-object"); }
             }
             Expr::IndexAccess(name, index_expr) => {
                  let vtype = self.var_types.get(name).expect(&format!("Undefined variable: {}", name)).clone();
@@ -100,18 +167,13 @@ impl Compiler {
             }
             Expr::Call(name, args) => {
                 if name == "print_str" {
-                     // Built-in Function: print_str(val)
-                     // Hem değişken (i32 adres) hem de string literal (@str) destekle
                      let (val, _) = self.compile_expr(&args[0]);
-                     
                      if val.starts_with("@str.") {
-                         // String Literal: Pointer al (getelementptr)
-                         let str_len = self.string_literals.iter().find(|s| format!("@str.{}", s.0) == val).unwrap().2;
+                         let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                          let ptr_reg = self.get_reg();
                          self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
                          self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", ptr_reg));
                      } else {
-                         // Değişken (i32 olarak saklanan adres): Pointer'a çevir (inttoptr)
                          let ptr_reg = self.get_reg();
                          self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr_reg, val));
                          self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", ptr_reg));
@@ -121,10 +183,10 @@ impl Compiler {
                     let mut arg_vals = Vec::new();
                     for arg in args {
                         let (val, vtype) = self.compile_expr(arg);
-                        
                         if let VarType::Str = vtype {
+                            // Simplify string passing (assume int for now or ptrtoint)
                             if val.starts_with("@str.") {
-                                let str_len = self.string_literals.iter().find(|s| format!("@str.{}", s.0) == val).unwrap().2;
+                                let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                                 let ptr_reg = self.get_reg();
                                 self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
                                 let int_reg = self.get_reg();
@@ -179,6 +241,10 @@ impl Compiler {
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::ClassDecl(name, fields) => {
+                // Register class. Struct def is generated in main compile loop/header.
+                self.classes.insert(name.clone(), fields.clone());
+            },
             Stmt::FuncDecl(name, args, body) => {
                 let old_in_func = self.is_in_function;
                 let old_vars = self.var_types.clone(); 
@@ -229,23 +295,38 @@ impl Compiler {
                     }
                 } else {
                     let (val, vtype) = self.compile_expr(expr);
-                    let llvm_type = match vtype { VarType::Int => "i32", VarType::Str => "i8*", _ => panic!("Error") };
-                    self.emit(&format!("  %{}_ptr = alloca {}\n", name, llvm_type));
-                    self.var_types.insert(name.clone(), vtype.clone());
-                    if vtype == VarType::Str {
-                        let str_len = self.string_literals.iter().find(|s| format!("@str.{}", s.0) == val).unwrap().2;
-                        let reg = self.get_reg();
-                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", reg, str_len, str_len, val));
-                         self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", reg, name));
-                    } else {
-                        self.emit(&format!("  store {} {}, {}* %{}_ptr\n", llvm_type, val, llvm_type, name));
+                    match &vtype {
+                        VarType::Instance(cls) => {
+                             self.emit(&format!("  %{}_ptr = alloca %struct.{}*\n", name, cls));
+                             self.emit(&format!("  store %struct.{}* {}, %struct.{}** %{}_ptr\n", cls, val, cls, name));
+                        },
+                        VarType::Int => {
+                             self.emit(&format!("  %{}_ptr = alloca i32\n", name));
+                             self.emit(&format!("  store i32 {}, i32* %{}_ptr\n", val, name));
+                        },
+                        VarType::Str => {
+                             self.emit(&format!("  %{}_ptr = alloca i8*\n", name));
+                             self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", val, name));
+                        },
+                        _ => panic!("Unsupported var type decl")
                     }
+                    self.var_types.insert(name.clone(), vtype);
                 }
             }
             Stmt::Assignment(name, expr) => {
                  let (val, vtype) = self.compile_expr(expr);
-                 let llvm_type = match vtype { VarType::Int => "i32", VarType::Str => "i8*", _ => "i32" };
-                 self.emit(&format!("  store {} {}, {}* %{}_ptr\n", llvm_type, val, llvm_type, name));
+                 // Assuming var already exists and type matches
+                 match vtype {
+                     VarType::Int => { self.emit(&format!("  store i32 {}, i32* %{}_ptr\n", val, name)); }
+                     VarType::Str => { self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", val, name)); }
+                     VarType::Instance(cls) => {
+                          self.emit(&format!("  store %struct.{}* {}, %struct.{}** %{}_ptr\n", cls, val, cls, name));
+                     }
+                     _ => panic!("Assign error")
+                 }
+            }
+            Stmt::ExprStmt(expr) => {
+                self.compile_expr(expr);
             }
             Stmt::Print(expr) => {
                 let (val, vtype) = self.compile_expr(expr);
@@ -253,13 +334,13 @@ impl Compiler {
                     VarType::Int => { self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_num, i32 0, i32 0), i32 {})\n", val)); }
                     VarType::Str => {
                          if val.starts_with("@") {
-                             let str_len = self.string_literals.iter().find(|s| format!("@str.{}", s.0) == val).unwrap().2;
+                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                              self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* getelementptr inbounds ([{} x i8], [{} x i8]* {}, i32 0, i32 0))\n", str_len, str_len, val));
                          } else {
                              self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", val));
                          }
                     }
-                    _ => panic!("This type cannot be printed"),
+                    _ => panic!("This type cannot be printed directly (try printing a field)"),
                 }
             }
             Stmt::IfStmt(cond, then_block, else_block_opt) => {
@@ -294,10 +375,6 @@ impl Compiler {
                 self.emit(&format!("{}:\n", label_end));
             }
             Stmt::BlockStmt(stmts) => { self.compile_block(stmts); }
-            Stmt::ExprStmt(expr) => {
-                // Sadece expression'ı çalıştır, dönen değeri umursama (Print yok!)
-                self.compile_expr(expr);
-            }
         }
     }
 
@@ -305,17 +382,32 @@ impl Compiler {
         self.output = String::new();
         self.main_body = String::new();
         
-        // Komutları tara
+        // 1. Scan for Class Declarations first to register them (and generate struct defs later)
+        // Note: recursion/nested blocks might hide class decls if not top level.
+        // For now, only Top Level classes supported.
+        for stmt in stmts {
+            if let Stmt::ClassDecl(name, fields) = stmt {
+                self.classes.insert(name.clone(), fields.clone());
+            }
+        }
+        
+        // 2. Compile Statements
         for stmt in stmts { self.compile_stmt(stmt); }
         
         let mut header = String::from("; Module: aura_lang\n");
+        // Generate Struct Definitions
+        for (name, fields) in &self.classes {
+             // Generate { i32, i32, ... }
+             let types_str = fields.iter().map(|_| "i32").collect::<Vec<_>>().join(", ");
+             header.push_str(&format!("%struct.{} = type {{ {} }}\n", name, types_str));
+        }
+
         header.push_str("declare i32 @printf(i8*, ...)\n");
-        // system fonksiyonunu tanımla (cmd komutu çalıştırmak için)
         header.push_str("declare i32 @system(i8*)\n");
+        header.push_str("declare i8* @malloc(i32)\n"); // Added malloc
         
         header.push_str("@fmt_num = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\"\n");
         header.push_str("@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n");
-        // chcp komutu için string sabiti (Boyut düzeltildi: 16 char + 1 null = 17)
         header.push_str("@cmd_chcp = private unnamed_addr constant [17 x i8] c\"chcp 65001 > nul\\00\"\n");
         
         for (id, content, len) in &self.string_literals {
@@ -331,10 +423,9 @@ impl Compiler {
         }
         
         header.push_str("\n");
-        header.push_str(&self.output);
+        header.push_str(&self.output); // Functions
         
         header.push_str("\ndefine i32 @main() {\nentry:\n");
-        // Main başlar başlamaz chcp 65001 çalıştır!
         header.push_str("  call i32 @system(i8* getelementptr inbounds ([17 x i8], [17 x i8]* @cmd_chcp, i32 0, i32 0))\n");
         
         header.push_str(&self.main_body);
