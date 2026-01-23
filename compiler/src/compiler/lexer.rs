@@ -3,7 +3,7 @@
 pub enum TokenType {
     Var, Print, If, Else,
     While, For, Foreach, In, 
-    Func, Return, Import, 
+    Func, Return, Import, From,
     Class, New, // Class support
     Id(String), Number(i32), String(String), 
     Assign, Plus, Minus, Mul, Div, 
@@ -107,7 +107,7 @@ impl Lexer {
                         "while"=>TokenType::While, "for"=>TokenType::For,
                         "foreach"=>TokenType::Foreach, "in"=>TokenType::In,
                         "func"=>TokenType::Func, "return"=>TokenType::Return,
-                        "import"=>TokenType::Import,
+                        "import"=>TokenType::Import, "from"=>TokenType::From,
                         "class"=>TokenType::Class, "new"=>TokenType::New,
                         _=>TokenType::Id(s) 
                     }

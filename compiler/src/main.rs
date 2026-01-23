@@ -7,8 +7,6 @@ use compiler::parser::Parser;
 use compiler::compiler::Compiler;
 
 fn main() {
-    // 1. Get Input File Path
-    let args: Vec<String> = std::env::args().collect();
     // 1. Get Input Path (File or Directory)
     let args: Vec<String> = std::env::args().collect();
     let arg_path = if args.len() > 1 { &args[1] } else { "." }; // Default to current directory if no args
@@ -74,7 +72,7 @@ fn main() {
     let tokens = lexer.tokenize();
     
     // 2. Parser
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(tokens, source_dir.to_path_buf());
     let ast = parser.parse(); 
     
     // 3. Compiler

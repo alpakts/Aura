@@ -1,0 +1,5 @@
+import { add } from "libs/utils.aur";
+
+var x = add(10, 20);
+print("Result of relative import:");
+print(x);

@@ -1,4 +1,5 @@
 use crate::compiler::lexer::{Token, TokenType, Lexer}; // Updated import to include Lexer
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -31,12 +32,13 @@ pub enum Stmt {
 
 pub struct Parser { 
     tokens: Vec<Token>, 
-    pos: usize 
+    pos: usize,
+    base_path: PathBuf
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self { 
-        Self { tokens, pos: 0 } 
+    pub fn new(tokens: Vec<Token>, base_path: PathBuf) -> Self { 
+        Self { tokens, pos: 0, base_path } 
     }
     
     fn peek(&self) -> &Token { &self.tokens[self.pos] }
@@ -52,6 +54,22 @@ impl Parser {
         if std::mem::discriminant(&t.kind) != std::mem::discriminant(&expected) { 
             panic!("{}", msg); 
         }
+    }
+
+    fn import_file(&self, path: &str) -> Stmt {
+        let mut full_path = self.base_path.clone();
+        full_path.push(path);
+        
+        let content = std::fs::read_to_string(&full_path)
+            .expect(&format!("Could not read imported file: {:?}", full_path));
+        
+        // New base path is the directory of the imported file
+        let new_base = full_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        
+        let mut lexer = Lexer::new(content);
+        let mut parser = Parser::new(lexer.tokenize(), new_base);
+        let imported_stmts = parser.parse();
+        Stmt::BlockStmt(imported_stmts)
     }
     
     // Primary expressions: Number, String, Variable, ArrayLiteral, Paren, New
@@ -237,18 +255,43 @@ impl Parser {
                 Stmt::ClassDecl(name, fields, methods)
             }
             TokenType::Import => { 
-                // ... (Existing Import Logic)
-                self.advance(); // import
-                let path_token = self.advance();
-                if let TokenType::String(path) = path_token.kind {
-                    self.consume(TokenType::Semicolon, "Expected ';'");
-                    let content = std::fs::read_to_string(&path)
-                        .expect(&format!("Could not read imported file: {}", path));
-                    let mut lexer = Lexer::new(content);
-                    let mut parser = Parser::new(lexer.tokenize());
-                    let imported_stmts = parser.parse();
-                    Stmt::BlockStmt(imported_stmts)
-                } else { panic!("Import panic"); } 
+                self.advance(); // consume 'import'
+                
+                match &self.peek().kind {
+                    TokenType::String(path) => {
+                        // import "file.aur";
+                        let path = path.clone();
+                        self.advance();
+                        self.consume(TokenType::Semicolon, "Expected ';'");
+                        self.import_file(&path)
+                    },
+                    TokenType::LBrace => {
+                        // import { A, B } from "file.aur";
+                        self.advance(); // {
+                        let mut _names = Vec::new();
+                        if let TokenType::Id(name) = self.advance().kind { _names.push(name); }
+                        while self.peek().kind == TokenType::Comma {
+                            self.advance();
+                            if let TokenType::Id(name) = self.advance().kind { _names.push(name); }
+                        }
+                        self.consume(TokenType::RBrace, "Expected '}'");
+                        self.consume(TokenType::From, "Expected 'from'");
+                        if let TokenType::String(path) = self.advance().kind {
+                            self.consume(TokenType::Semicolon, "Expected ';'");
+                            self.import_file(&path)
+                        } else { panic!("Expected string path"); }
+                    },
+                    TokenType::Id(_) => {
+                        // import A from "file.aur";
+                        self.advance(); // Name
+                        self.consume(TokenType::From, "Expected 'from'");
+                        if let TokenType::String(path) = self.advance().kind {
+                            self.consume(TokenType::Semicolon, "Expected ';'");
+                            self.import_file(&path)
+                        } else { panic!("Expected string path"); }
+                    },
+                    _ => panic!("Unexpected token after import: {:?}", self.peek().kind)
+                }
             }
             // ... (Existing Func, Return, Var, Print, If, While, For)
             TokenType::Func => {
