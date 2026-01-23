@@ -9,7 +9,7 @@ use parser::Parser;
 use compiler::Compiler;
 
 fn main() {
-    let file = Path::new("test.aa");
+    let file = Path::new("example.aur");
     if file.exists() {
         println!("🚀 Derleniyor: {:?}", file);
         let src = fs::read_to_string(&file).unwrap();
@@ -31,6 +31,6 @@ fn main() {
         fs::write(&out, ir).unwrap();
         println!("✅ LLVM IR Oluşturuldu: {:?}", out);
     } else {
-        println!("❌ Hata: test.aa dosyası bulunamadı.");
+        println!("❌ Hata: example.aur dosyası bulunamadı.");
     }
 }
