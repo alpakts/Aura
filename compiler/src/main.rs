@@ -1,14 +1,17 @@
-mod lexer;
-mod parser;
 mod compiler;
 
 use std::fs;
 use std::path::Path;
-use lexer::Lexer;
-use parser::Parser;
-use compiler::Compiler;
+use compiler::lexer::Lexer;
+use compiler::parser::Parser;
+use compiler::compiler::Compiler;
 
 fn main() {
+    // Change directory to source folder so imports work
+    if let Err(e) = std::env::set_current_dir("../src") {
+        println!("⚠️ Warning: Could not change directory to ../src: {}", e);
+    }
+
     let file = Path::new("example.aur");
     if file.exists() {
         println!("🚀 Compiling: {:?}", file);

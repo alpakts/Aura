@@ -1,4 +1,4 @@
-use crate::lexer::{Token, TokenType, Lexer}; // Updated import to include Lexer
+use crate::compiler::lexer::{Token, TokenType, Lexer}; // Updated import to include Lexer
 
 #[derive(Debug)]
 pub enum Expr {
@@ -150,6 +150,7 @@ impl Parser {
                 self.advance(); // import
                 let path_token = self.advance();
                 if let TokenType::String(path) = path_token.kind {
+                    self.consume(TokenType::Semicolon, "Expected ';'");
                     let content = std::fs::read_to_string(&path)
                         .expect(&format!("Could not read imported file: {}", path));
                     
@@ -181,12 +182,12 @@ impl Parser {
             }
             TokenType::Return => {
                 self.advance(); // return
-                let expr = if self.peek().kind != TokenType::Semicolon && self.peek().kind != TokenType::RBrace {
+                let expr = if self.peek().kind != TokenType::Semicolon {
                      Some(self.parse_expr())
                 } else {
                      None
                 };
-                if self.peek().kind == TokenType::Semicolon { self.advance(); }
+                self.consume(TokenType::Semicolon, "Expected ';'");
                 Stmt::ReturnStmt(expr)
             }
             TokenType::Var => {
@@ -194,7 +195,7 @@ impl Parser {
                 if let TokenType::Id(name) = self.advance().kind {
                     self.consume(TokenType::Assign, "Expected '='");
                     let expr = self.parse_expr();
-                    if self.peek().kind == TokenType::Semicolon { self.advance(); }
+                    self.consume(TokenType::Semicolon, "Expected ';'");
                     Stmt::VarDecl(name, expr)
                 } else { panic!("Expected variable name"); }
             }
@@ -202,7 +203,7 @@ impl Parser {
                 self.advance(); self.consume(TokenType::LParen, "Expected '('");
                 let e = self.parse_expr();
                 self.consume(TokenType::RParen, "Expected ')'");
-                if self.peek().kind == TokenType::Semicolon { self.advance(); }
+                self.consume(TokenType::Semicolon, "Expected ';'");
                 Stmt::Print(e)
             }
             TokenType::If => {
@@ -269,12 +270,12 @@ impl Parser {
                         while self.peek().kind == TokenType::Comma { self.advance(); args.push(self.parse_expr()); }
                     }
                     self.consume(TokenType::RParen, "Expected ')'");
-                    if self.peek().kind == TokenType::Semicolon { self.advance(); }
+                    self.consume(TokenType::Semicolon, "Expected ';'");
                     Stmt::ExprStmt(Expr::Call(name, args)) 
                 } else {
                     self.consume(TokenType::Assign, "Expected '='");
                     let expr = self.parse_expr();
-                    if self.peek().kind == TokenType::Semicolon { self.advance(); }
+                    self.consume(TokenType::Semicolon, "Expected ';'");
                     Stmt::Assignment(name, expr)
                 }
             }

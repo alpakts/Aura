@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use crate::lexer::TokenType;
-use crate::parser::{Expr, Stmt};
+use crate::compiler::lexer::TokenType;
+use crate::compiler::parser::{Expr, Stmt};
 
 #[derive(Clone, PartialEq, Debug)]
 enum VarType { Int, Str, Array(usize) }
