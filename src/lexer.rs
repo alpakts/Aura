@@ -3,7 +3,7 @@
 pub enum TokenType {
     Var, Print, If, Else,
     While, For, Foreach, In, 
-    Func, Return,
+    Func, Return, Import, // <-- Added Import
     Id(String), Number(i32), String(String), 
     Assign, Plus, Minus, Mul, Div, 
     LParen, RParen, LBrace, RBrace, // { }
@@ -63,7 +63,7 @@ impl Lexer {
                 },
                 '!' => {
                     self.advance();
-                    if self.peek() == Some('=') { self.advance(); TokenType::Neq } else { panic!("Satır {}: ! yanına = bekleniyor", self.line) }
+                    if self.peek() == Some('=') { self.advance(); TokenType::Neq } else { panic!("Line {}: Expected '=' after '!'", self.line) }
                 },
                 '<' => {
                     self.advance();
@@ -88,7 +88,7 @@ impl Lexer {
                 '"' => {
                     self.advance(); let mut s = String::new();
                     while let Some(ch) = self.peek() { if ch == '"' { break; } s.push(self.advance().unwrap()); }
-                    if self.peek() == Some('"') { self.advance(); } else { panic!("String kapanmadı!"); }
+                    if self.peek() == Some('"') { self.advance(); } else { panic!("Run-away string literal!"); }
                     TokenType::String(s)
                 },
                 '0'..='9' => {
@@ -105,10 +105,11 @@ impl Lexer {
                         "while"=>TokenType::While, "for"=>TokenType::For,
                         "foreach"=>TokenType::Foreach, "in"=>TokenType::In,
                         "func"=>TokenType::Func, "return"=>TokenType::Return,
+                        "import"=>TokenType::Import, // <-- Added "import" keyword
                         _=>TokenType::Id(s) 
                     }
                 },
-                _ => panic!("Bilinmeyen karakter: {}", c),
+                _ => panic!("Unknown character: {}", c),
             };
             tokens.push(self.create_token(kind));
         }

@@ -1,49 +1,17 @@
+import "math.aur"
 
-var grade = 75
-print("Student Grade:")
-print(grade)
+print("Testing Modules...")
 
-if (grade > 90) {
-    print("Rank: AA")
-} else if (grade > 70) {
-    print("Rank: BB")
-} else if (grade > 50) {
-    print("Rank: CC")
+var sum = add(10, 32)
+print("Sum (10 + 32):")
+print(sum)
+
+var product = multiply(5, 5)
+print("Product (5 * 5):")
+print(product)
+
+if (sum > product) {
+    print("Sum is greater")
 } else {
-    print("Status: Failed")
+    print("Product is greater")
 }
-
-// Completion check
-var check = 1
-if (check == 1) { print("Program completed successfully.") }
-
-// Array Test
-var numbers = [10, 20, 30]
-print("First element of array:")
-print(numbers[0])
-
-var counter = 0
-while (counter < 3) {
-    print("While Counter:")
-    print(counter)
-    counter = counter + 1
-}
-
-func add(a, b) {
-    return a + b
-}
-
-var total = add(10, 50)
-print("Function Result (10+50):")
-print(total)
-
-print_str("Hello World! Else If works.")
-
-
-func calculate(a,b){
-    return(a+b)
-}
-
-var result = calculate(10,20)
-print("Function Result (10+20):")
-print(result)

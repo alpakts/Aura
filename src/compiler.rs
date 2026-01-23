@@ -70,11 +70,11 @@ impl Compiler {
                 (str_id, VarType::Str)
             }
             Expr::ArrayLiteral(_) => {
-                panic!("Array Literal sadece değişken tanımlanırken kullanılabilir!");
+                panic!("Array Literal can only be used in variable declaration!");
             }
             Expr::Variable(name) => {
                 let reg = self.get_reg();
-                let vtype = self.var_types.get(name).expect(&format!("Tanımlanmamış değişken: {}", name)).clone();
+                let vtype = self.var_types.get(name).expect(&format!("Undefined variable: {}", name)).clone();
                 match vtype { 
                     VarType::Int => {
                         self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name));
@@ -84,11 +84,11 @@ impl Compiler {
                         self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name));
                         (reg, vtype)
                     },
-                    VarType::Array(_) => panic!("Dizilere sadece index ile erişilebilir: {}[0]", name),
+                    VarType::Array(_) => panic!("Arrays can only be accessed via index: {}[0]", name),
                 }
             }
             Expr::IndexAccess(name, index_expr) => {
-                 let vtype = self.var_types.get(name).expect(&format!("Tanımlanmamış değişken: {}", name)).clone();
+                 let vtype = self.var_types.get(name).expect(&format!("Undefined variable: {}", name)).clone();
                  if let VarType::Array(len) = vtype {
                      let (idx_val, _) = self.compile_expr(index_expr);
                      let ptr_reg = self.get_reg();
@@ -96,7 +96,7 @@ impl Compiler {
                      let val_reg = self.get_reg();
                      self.emit(&format!("  {} = load i32, i32* {}\n", val_reg, ptr_reg));
                      (val_reg, VarType::Int)
-                 } else { panic!("'{}' bir dizi değil!", name); }
+                 } else { panic!("'{}' is not an array!", name); }
             }
             Expr::Call(name, args) => {
                 if name == "print_str" {
@@ -229,7 +229,7 @@ impl Compiler {
                     }
                 } else {
                     let (val, vtype) = self.compile_expr(expr);
-                    let llvm_type = match vtype { VarType::Int => "i32", VarType::Str => "i8*", _ => panic!("Hata") };
+                    let llvm_type = match vtype { VarType::Int => "i32", VarType::Str => "i8*", _ => panic!("Error") };
                     self.emit(&format!("  %{}_ptr = alloca {}\n", name, llvm_type));
                     self.var_types.insert(name.clone(), vtype.clone());
                     if vtype == VarType::Str {
@@ -259,7 +259,7 @@ impl Compiler {
                              self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", val));
                          }
                     }
-                    _ => panic!("Bu tip yazdırılamaz"),
+                    _ => panic!("This type cannot be printed"),
                 }
             }
             Stmt::IfStmt(cond, then_block, else_block_opt) => {
@@ -308,7 +308,7 @@ impl Compiler {
         // Komutları tara
         for stmt in stmts { self.compile_stmt(stmt); }
         
-        let mut header = String::from("; Modül: aa_lang\n");
+        let mut header = String::from("; Module: aura_lang\n");
         header.push_str("declare i32 @printf(i8*, ...)\n");
         // system fonksiyonunu tanımla (cmd komutu çalıştırmak için)
         header.push_str("declare i32 @system(i8*)\n");

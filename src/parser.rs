@@ -1,4 +1,4 @@
-use crate::lexer::{Token, TokenType};
+use crate::lexer::{Token, TokenType, Lexer}; // Updated import to include Lexer
 
 #[derive(Debug)]
 pub enum Expr {
@@ -60,13 +60,13 @@ impl Parser {
                 self.advance();
                 // Değişken mi, çağrı mı, dizi mi?
                 if self.peek().kind == TokenType::LBracket {
-                    // Dizi: arr[0]
+                    // Array: arr[0]
                     self.advance(); 
                     let index = self.parse_expr();
-                    self.consume(TokenType::RBracket, "']' bekleniyor"); 
+                    self.consume(TokenType::RBracket, "Expected ']'"); 
                     Expr::IndexAccess(n, Box::new(index))
                 } else if self.peek().kind == TokenType::LParen {
-                    // Çağrı: func(args)
+                    // Call: func(args)
                     self.advance(); // (
                     let mut args = Vec::new();
                     if self.peek().kind != TokenType::RParen {
@@ -76,7 +76,7 @@ impl Parser {
                             args.push(self.parse_expr());
                         }
                     }
-                    self.consume(TokenType::RParen, "')' bekleniyor");
+                    self.consume(TokenType::RParen, "Expected ')'");
                     Expr::Call(n, args)
                 } else {
                     // Normal değişken
@@ -93,13 +93,13 @@ impl Parser {
                         elements.push(self.parse_expr());
                     }
                 }
-                self.consume(TokenType::RBracket, "']' bekleniyor"); // ]
+                self.consume(TokenType::RBracket, "Expected ']'"); // ]
                 Expr::ArrayLiteral(elements)
             },
             TokenType::LParen => {
                 self.advance(); // (
                 let e = self.parse_expr(); 
-                self.consume(TokenType::RParen, "')' eksik"); 
+                self.consume(TokenType::RParen, "Missing ')'"); 
                 e 
             },
             _ => panic!("Beklenmeyen token: {:?}", t),
@@ -134,24 +134,39 @@ impl Parser {
     }
     
     fn parse_block(&mut self) -> Vec<Stmt> {
-        self.consume(TokenType::LBrace, "'{' bekleniyor");
+        self.consume(TokenType::LBrace, "Expected '{'");
         let mut stmts = Vec::new();
         while self.peek().kind != TokenType::RBrace && self.peek().kind != TokenType::EOF {
             stmts.push(self.parse_stmt());
         }
-        self.consume(TokenType::RBrace, "'}' bekleniyor");
+        self.consume(TokenType::RBrace, "Expected '}'");
         stmts
     }
 
     fn parse_stmt(&mut self) -> Stmt {
         let t = self.peek().clone();
         match t.kind {
+            TokenType::Import => {
+                self.advance(); // import
+                let path_token = self.advance();
+                if let TokenType::String(path) = path_token.kind {
+                    let content = std::fs::read_to_string(&path)
+                        .expect(&format!("Could not read imported file: {}", path));
+                    
+                    let mut lexer = Lexer::new(content);
+                    let mut parser = Parser::new(lexer.tokenize());
+                    let imported_stmts = parser.parse();
+                    Stmt::BlockStmt(imported_stmts)
+                } else {
+                    panic!("Import statement must be followed by a string literal.");
+                }
+            }
             TokenType::Func => {
                 // func name(arg1, arg2) { body }
                 self.advance();
-                let name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Fonksiyon adı eksik") };
+                let name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Function name missing") };
                 
-                self.consume(TokenType::LParen, "'(' bekleniyor");
+                self.consume(TokenType::LParen, "Expected '('");
                 let mut args = Vec::new();
                 if self.peek().kind != TokenType::RParen {
                     if let TokenType::Id(arg) = self.advance().kind { args.push(arg); }
@@ -160,7 +175,7 @@ impl Parser {
                         if let TokenType::Id(arg) = self.advance().kind { args.push(arg); }
                     }
                 }
-                self.consume(TokenType::RParen, "')' bekleniyor");
+                self.consume(TokenType::RParen, "Expected ')'");
                 let body = self.parse_block();
                 Stmt::FuncDecl(name, args, body)
             }
@@ -177,24 +192,24 @@ impl Parser {
             TokenType::Var => {
                 self.advance();
                 if let TokenType::Id(name) = self.advance().kind {
-                    self.consume(TokenType::Assign, "'=' bekleniyor");
+                    self.consume(TokenType::Assign, "Expected '='");
                     let expr = self.parse_expr();
                     if self.peek().kind == TokenType::Semicolon { self.advance(); }
                     Stmt::VarDecl(name, expr)
-                } else { panic!("Değişken adı bekleniyor"); }
+                } else { panic!("Expected variable name"); }
             }
             TokenType::Print => {
-                self.advance(); self.consume(TokenType::LParen, "'(' bekleniyor");
+                self.advance(); self.consume(TokenType::LParen, "Expected '('");
                 let e = self.parse_expr();
-                self.consume(TokenType::RParen, "')' bekleniyor");
+                self.consume(TokenType::RParen, "Expected ')'");
                 if self.peek().kind == TokenType::Semicolon { self.advance(); }
                 Stmt::Print(e)
             }
             TokenType::If => {
                 self.advance();
-                self.consume(TokenType::LParen, "'(' bekleniyor");
+                self.consume(TokenType::LParen, "Expected '('");
                 let condition = self.parse_expr();
-                self.consume(TokenType::RParen, "')' bekleniyor");
+                self.consume(TokenType::RParen, "Expected ')'");
                 let then_block = self.parse_block();
                 let mut else_block = None;
                 if matches!(self.peek().kind, TokenType::Else) {
@@ -210,15 +225,15 @@ impl Parser {
             }
             TokenType::While => {
                 self.advance();
-                self.consume(TokenType::LParen, "'(' bekleniyor");
+                self.consume(TokenType::LParen, "Expected '('");
                 let condition = self.parse_expr();
-                self.consume(TokenType::RParen, "')' bekleniyor");
+                self.consume(TokenType::RParen, "Expected ')'");
                 let block = self.parse_block();
                 Stmt::WhileStmt(condition, block)
             }
             TokenType::For => {
                 self.advance(); // for
-                self.consume(TokenType::LParen, "'(' bekleniyor");
+                self.consume(TokenType::LParen, "Expected '('");
                 let mut init_stmts = Vec::new();
                 if self.peek().kind != TokenType::Semicolon {
                     init_stmts.push(self.parse_stmt()); 
@@ -226,17 +241,17 @@ impl Parser {
                 let condition = if self.peek().kind != TokenType::Semicolon {
                     self.parse_expr()
                 } else { Expr::Number(1) };
-                self.consume(TokenType::Semicolon, "Koşuldan sonra ';' bekleniyor");
+                self.consume(TokenType::Semicolon, "Expected ';' after condition");
                 let mut step_stmts = Vec::new();
                 if self.peek().kind != TokenType::RParen {
                     if let TokenType::Id(name) = self.peek().kind.clone() {
                         self.advance(); 
-                        self.consume(TokenType::Assign, "'=' bekleniyor");
+                        self.consume(TokenType::Assign, "Expected '='");
                         let expr = self.parse_expr();
                         step_stmts.push(Stmt::Assignment(name, expr));
                     }
                 }
-                self.consume(TokenType::RParen, "')' bekleniyor");
+                self.consume(TokenType::RParen, "Expected ')'");
                 let mut body = self.parse_block();
                 body.extend(step_stmts);
                 let while_loop = Stmt::WhileStmt(condition, body);
@@ -246,24 +261,24 @@ impl Parser {
             TokenType::Id(name) => {
                 self.advance(); 
                 if self.peek().kind == TokenType::LParen {
-                    // Fonksiyon Çağrısı (Stmt olarak)
+                    // Function Call (as Stmt)
                     self.advance(); // (
                     let mut args = Vec::new();
                     if self.peek().kind != TokenType::RParen {
                         args.push(self.parse_expr());
                         while self.peek().kind == TokenType::Comma { self.advance(); args.push(self.parse_expr()); }
                     }
-                    self.consume(TokenType::RParen, "')' bekleniyor");
+                    self.consume(TokenType::RParen, "Expected ')'");
                     if self.peek().kind == TokenType::Semicolon { self.advance(); }
                     Stmt::ExprStmt(Expr::Call(name, args)) 
                 } else {
-                    self.consume(TokenType::Assign, "'=' bekleniyor");
+                    self.consume(TokenType::Assign, "Expected '='");
                     let expr = self.parse_expr();
                     if self.peek().kind == TokenType::Semicolon { self.advance(); }
                     Stmt::Assignment(name, expr)
                 }
             }
-            _ => panic!("Bilinmeyen ifade: {:?}", t),
+            _ => panic!("Unknown expression or token: {:?}", t),
         }
     }
     
