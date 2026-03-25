@@ -191,18 +191,35 @@ impl Compiler {
             },
             Expr::Call(name, args) => {
                 if name == "print_str" {
-                     let (val, _) = self.compile_expr(&args[0]);
+                     let (val, vtype) = self.compile_expr(&args[0]);
                      if val.starts_with("@str.") {
                          let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                          let ptr_reg = self.get_reg();
                          self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
                          self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", ptr_reg));
                      } else {
-                         let ptr_reg = self.get_reg();
-                         self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr_reg, val));
-                         self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", ptr_reg));
+                         let final_ptr = if vtype == VarType::Str {
+                             val // Zaten i8* (input_str'den gelmiş olabilir)
+                         } else {
+                             let ptr_reg = self.get_reg();
+                             self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr_reg, val));
+                             ptr_reg
+                         };
+                         self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", final_ptr));
                      }
                      ("0".to_string(), VarType::Int) 
+                } else if name == "input" {
+                    let ptr_reg = self.get_reg();
+                    self.emit(&format!("  {} = alloca i32\n", ptr_reg));
+                    self.emit(&format!("  call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_num, i32 0, i32 0), i32* {})\n", ptr_reg));
+                    let val_reg = self.get_reg();
+                    self.emit(&format!("  {} = load i32, i32* {}\n", val_reg, ptr_reg));
+                    (val_reg, VarType::Int)
+                } else if name == "input_str" {
+                    let malloc_reg = self.get_reg();
+                    self.emit(&format!("  {} = call i8* @malloc(i32 256)\n", malloc_reg));
+                    self.emit(&format!("  call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i32 0, i32 0), i8* {})\n", malloc_reg));
+                    (malloc_reg, VarType::Str)
                 } else {
                     let mut arg_vals = Vec::new();
                     for arg in args {
@@ -465,11 +482,14 @@ impl Compiler {
         }
 
         header.push_str("declare i32 @printf(i8*, ...)\n");
+        header.push_str("declare i32 @scanf(i8*, ...)\n"); // Added scanf
         header.push_str("declare i32 @system(i8*)\n");
         header.push_str("declare i8* @malloc(i32)\n"); // Added malloc
         
         header.push_str("@fmt_num = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\"\n");
         header.push_str("@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n");
+        header.push_str("@fmt_input_num = private unnamed_addr constant [3 x i8] c\"%d\\00\"\n");
+        header.push_str("@fmt_input_str = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
         header.push_str("@cmd_chcp = private unnamed_addr constant [17 x i8] c\"chcp 65001 > nul\\00\"\n");
         
         for (id, content, len) in &self.string_literals {
