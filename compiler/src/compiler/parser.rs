@@ -16,6 +16,7 @@ pub enum Expr {
     Get(Box<Expr>, String), // obj.field
     Set(Box<Expr>, String, Box<Expr>), // obj.field = val
     MethodCall(Box<Expr>, String, Vec<Expr>), // obj.method(args)
+    NamespacedCall(Vec<String>, Vec<Expr>), // std.net.api_listen(args)
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub enum Stmt {
     ClassDecl(String, Vec<String>, Vec<Stmt>), // class Name { var f1; methods... }
     ReturnStmt(Option<Expr>),
     ExprStmt(Expr), 
+    ImportStmt(String), // import "std"
 }
 
 pub struct Parser { 
@@ -59,16 +61,17 @@ impl Parser {
     }
 
     fn import_file(&self, path: &str) -> Stmt {
+        if path == "std" {
+            return Stmt::ImportStmt(path.to_string());
+        }
+
         let mut full_path = self.base_path.clone();
         full_path.push(path);
-        
-        let content = std::fs::read_to_string(&full_path)
-            .expect(&format!("Could not read imported file: {:?}", full_path));
         
         // New base path is the directory of the imported file
         let new_base = full_path.parent().unwrap_or(Path::new(".")).to_path_buf();
         
-        let mut lexer = Lexer::new(content);
+        let content = std::fs::read_to_string(&full_path).expect(&format!("Could not read imported file: {:?}", full_path)); let mut lexer = Lexer::new(content);
         let mut parser = Parser::new(lexer.tokenize(), new_base);
         let imported_stmts = parser.parse();
         Stmt::BlockStmt(imported_stmts)
@@ -135,8 +138,12 @@ impl Parser {
                         expr = Expr::Call(name, args);
                     } else if let Expr::Get(obj, method_name) = expr {
                         // Support obj.method()
-                        // treated as a MethodCall
-                        expr = Expr::MethodCall(obj, method_name, args);
+                        // treated as a MethodCall OR NamespacedCall
+                        if let Some(parts) = self.resolve_namespace_chain(&Expr::Get(obj.clone(), method_name.clone())) {
+                             expr = Expr::NamespacedCall(parts, args);
+                        } else {
+                             expr = Expr::MethodCall(obj, method_name, args);
+                        }
                     } else {
                         // For now we only support calling named functions directly, 
                         // but technically `obj.method()` could be supported via this or similar.
@@ -165,15 +172,14 @@ impl Parser {
                          panic!("Indexing only supported on variables for now");
                     }
                 },
-                TokenType::Dot => {
-                    // Member Access
+                    TokenType::Dot => { // Member Access (Dot)
                     self.advance();
-                    if let TokenType::Id(field) = self.advance().kind {
-                        expr = Expr::Get(Box::new(expr), field);
-                    } else {
-                        panic!("Expected field name after '.'");
-                    }
-                },
+                    let field = match self.advance().kind {
+                        TokenType::Id(s) => s,
+                        TokenType::Print => "print".to_string(),
+                        _ => panic!("Expected identifier or keyword after '.' at line {:?}", self.peek().line),
+                    };
+                    expr = Expr::Get(Box::new(expr), field); }
                 _ => break,
             }
         }
@@ -224,6 +230,19 @@ impl Parser {
             node = Expr::Binary(Box::new(node), op, Box::new(self.parse_and()));
         }
         node
+    }
+
+    fn resolve_namespace_chain(&self, expr: &Expr) -> Option<Vec<String>> {
+        match expr {
+            Expr::Variable(n) => Some(vec![n.clone()]),
+            Expr::Get(inner, field) => {
+                if let Some(mut parts) = self.resolve_namespace_chain(inner) {
+                    parts.push(field.clone());
+                    Some(parts)
+                } else { None }
+            },
+            _ => None
+        }
     }
 
     fn parse_expr(&mut self) -> Expr {
