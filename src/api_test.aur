@@ -1,0 +1,6 @@
+print_str("Aura Web Server Baslatiliyor...");
+print_str("Lutfen tarayicidan http://localhost:8080 adresine gidin.");
+
+api_start(8080);
+
+print_str("Istek alindi ve yanitlandi. Sunucu kapaniyor.");

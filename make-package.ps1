@@ -28,8 +28,8 @@ if ($ClangPath) {
 }
 
 # 4. Search for .lib files
-Write-Host "Collecting Windows SDK .lib files..." -ForegroundColor Yellow
-$RequiredLibs = @("msvcrt.lib", "kernel32.lib", "user32.lib", "ucrt.lib", "vcruntime.lib", "legacy_stdio_definitions.lib")
+Write-Host "Collecting Windows library files (.lib)..." -ForegroundColor Yellow
+$RequiredLibs = @("msvcrt.lib", "kernel32.lib", "user32.lib", "ucrt.lib", "vcruntime.lib", "legacy_stdio_definitions.lib", "ws2_32.lib")
 $SearchRoots = @(
     "C:\Program Files (x86)\Windows Kits\10\Lib",
     "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\lib\x64"

@@ -1,0 +1,19 @@
+class UserController {
+    func getUser(id) {
+        if (id == 1) {
+            return "{\"id\": 1, \"name\": \"Alper\", \"role\": \"Admin\"}";
+        }
+        if (id == 5) {
+            return "{\"id\": 5, \"name\": \"Aura AI\", \"role\": \"Assistant\"}";
+        }
+        return "{\"status\": \"error\", \"message\": \"User not found\"}";
+    }
+}
+
+print_str("Aura Controller API Sunucusu Ayakta!");
+print_str("Denemek icin tarayicidan su adreslere gidin:");
+print_str("- http://localhost:8080/getUser?id=1");
+print_str("- http://localhost:8080/getUser?id=5");
+
+var api = new UserController();
+api_listen(8080, api);

@@ -1,0 +1,2 @@
+print_str("Aura Test");
+print(10 + 20);

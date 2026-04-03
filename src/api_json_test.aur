@@ -1,0 +1,10 @@
+print_str("Aura JSON API Sunucusu Baslatiliyor...");
+print_str("Endpoint: http://localhost:8080/api/test");
+
+var port = 8080;
+var path = "/api/test";
+var response = "{\"status\": \"success\", \"code\": 200, \"message\": \"AURA API IS LIVE!\"}";
+
+api_json(port, path, response);
+
+print_str("API Istegi basariyla yanitlandi.");

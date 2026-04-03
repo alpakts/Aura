@@ -89,7 +89,24 @@ impl Lexer {
                 ';' => { self.advance(); TokenType::Semicolon },
                 '"' => {
                     self.advance(); let mut s = String::new();
-                    while let Some(ch) = self.peek() { if ch == '"' { break; } s.push(self.advance().unwrap()); }
+                    while let Some(ch) = self.peek() { 
+                        if ch == '"' { break; } 
+                        if ch == '\\' {
+                            self.advance(); // consume '\'
+                            if let Some(next) = self.peek() {
+                                match next {
+                                    '"' => { s.push('"'); self.advance(); },
+                                    'n' => { s.push('\n'); self.advance(); },
+                                    'r' => { s.push('\r'); self.advance(); },
+                                    't' => { s.push('\t'); self.advance(); },
+                                    '\\' => { s.push('\\'); self.advance(); },
+                                    _ => s.push('\\'), // just keep it if unknown
+                                }
+                            }
+                        } else {
+                            s.push(self.advance().unwrap()); 
+                        }
+                    }
                     if self.peek() == Some('"') { self.advance(); } else { panic!("Run-away string literal!"); }
                     TokenType::String(s)
                 },
