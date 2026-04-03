@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 pub enum Expr {
     Number(i32), 
     String(String), 
+    Bool(bool),
     Variable(String),
     ArrayLiteral(Vec<Expr>), 
     IndexAccess(String, Box<Expr>), 
     Call(String, Vec<Expr>), 
     Binary(Box<Expr>, TokenType, Box<Expr>),
+    Unary(TokenType, Box<Expr>),
     New(String), // new ClassName()
     Get(Box<Expr>, String), // obj.field
     Set(Box<Expr>, String, Box<Expr>), // obj.field = val
@@ -80,7 +82,9 @@ impl Parser {
         let mut expr = match t.kind {
             TokenType::Number(n) => { self.advance(); Expr::Number(n) },
             TokenType::String(s) => { self.advance(); Expr::String(s) },
+            TokenType::Bool(b) => { self.advance(); Expr::Bool(b) },
             TokenType::Id(n) => { self.advance(); Expr::Variable(n) },
+            TokenType::Not => { self.advance(); Expr::Unary(TokenType::Not, Box::new(self.parse_primary())) },
             TokenType::New => {
                  self.advance(); // new
                  if let TokenType::Id(class_name) = self.advance().kind {
@@ -195,13 +199,35 @@ impl Parser {
         node
     }
 
-    fn parse_expr(&mut self) -> Expr {
+    fn parse_comparison(&mut self) -> Expr {
         let mut node = self.parse_arithmetic();
         while matches!(self.peek().kind, TokenType::Eq|TokenType::Neq|TokenType::Lt|TokenType::Gt|TokenType::Lte|TokenType::Gte) {
              let op = self.advance().kind.clone();
              node = Expr::Binary(Box::new(node), op, Box::new(self.parse_arithmetic()));
         }
         node
+    }
+
+    fn parse_and(&mut self) -> Expr {
+        let mut node = self.parse_comparison();
+        while self.peek().kind == TokenType::And {
+            let op = self.advance().kind.clone();
+            node = Expr::Binary(Box::new(node), op, Box::new(self.parse_comparison()));
+        }
+        node
+    }
+
+    fn parse_or(&mut self) -> Expr {
+        let mut node = self.parse_and();
+        while self.peek().kind == TokenType::Or {
+            let op = self.advance().kind.clone();
+            node = Expr::Binary(Box::new(node), op, Box::new(self.parse_and()));
+        }
+        node
+    }
+
+    fn parse_expr(&mut self) -> Expr {
+        self.parse_or()
     }
     
     fn parse_block(&mut self) -> Vec<Stmt> {

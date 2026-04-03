@@ -5,11 +5,12 @@ pub enum TokenType {
     While, For, Foreach, In, 
     Func, Return, Import, From,
     Class, New, // Class support
-    Id(String), Number(i32), String(String), 
+    Id(String), Number(i32), String(String), Bool(bool),
     Assign, Plus, Minus, Mul, Div, 
     LParen, RParen, LBrace, RBrace, // { }
     LBracket, RBracket, Comma, Semicolon, Dot, // [ ] , ; .
     Eq, Neq, Lt, Gt, Lte, Gte,      // == != < > <= >=
+    And, Or, Not,                  // && || !
     EOF,
 }
 
@@ -65,7 +66,7 @@ impl Lexer {
                 },
                 '!' => {
                     self.advance();
-                    if self.peek() == Some('=') { self.advance(); TokenType::Neq } else { panic!("Line {}: Expected '=' after '!'", self.line) }
+                    if self.peek() == Some('=') { self.advance(); TokenType::Neq } else { TokenType::Not }
                 },
                 '<' => {
                     self.advance();
@@ -79,6 +80,14 @@ impl Lexer {
                 '-' => { self.advance(); TokenType::Minus },
                 '*' => { self.advance(); TokenType::Mul },
                 '/' => { self.advance(); TokenType::Div },
+                '&' => {
+                    self.advance();
+                    if self.peek() == Some('&') { self.advance(); TokenType::And } else { panic!("Line {}: Expected '&' after '&'", self.line) }
+                },
+                '|' => {
+                    self.advance();
+                    if self.peek() == Some('|') { self.advance(); TokenType::Or } else { panic!("Line {}: Expected '|' after '|'", self.line) }
+                },
                 '(' => { self.advance(); TokenType::LParen },
                 ')' => { self.advance(); TokenType::RParen },
                 '{' => { self.advance(); TokenType::LBrace },
@@ -126,6 +135,7 @@ impl Lexer {
                         "func"=>TokenType::Func, "return"=>TokenType::Return,
                         "import"=>TokenType::Import, "from"=>TokenType::From,
                         "class"=>TokenType::Class, "new"=>TokenType::New,
+                        "true"=>TokenType::Bool(true), "false"=>TokenType::Bool(false),
                         _=>TokenType::Id(s) 
                     }
                 },

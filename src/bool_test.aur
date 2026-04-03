@@ -1,0 +1,33 @@
+func check(id) {
+    print_str("Checking ID:");
+    print(id);
+    return true;
+}
+
+func test_logic() {
+    var a = true;
+    var b = false;
+    
+    print_str("a && b (should be 0):");
+    print(a && b);
+    
+    print_str("a || b (should be 1):");
+    print(a || b);
+    
+    print_str("Short-circuit OR (should NOT see Checking ID 1):");
+    var res_or = true || check(1);
+    
+    print_str("Short-circuit AND (should NOT see Checking ID 2):");
+    var res_and = false && check(2);
+    
+    print_str("Logical Not (should be 1):");
+    print(!b);
+    
+    if (a && !b) {
+        print_str("If with logical operators works!");
+    }
+
+    return 0;
+}
+
+test_logic();

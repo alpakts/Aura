@@ -13,6 +13,7 @@ pub enum TargetOs {
 enum VarType { 
     Int, 
     Str, 
+    Bool,
     Array(Box<VarType>, usize),
     Instance(String) 
 }
@@ -114,12 +115,47 @@ impl Compiler {
         }
     }
 
+    fn cast_to_i1(&mut self, val: String, vtype: VarType) -> String {
+        match vtype {
+            VarType::Bool => val,
+            VarType::Int => {
+                let reg = self.get_reg();
+                self.emit(&format!("  {} = icmp ne i32 {}, 0\n", reg, val));
+                reg
+            },
+            VarType::Str | VarType::Instance(_) => {
+                let reg = self.get_reg();
+                self.emit(&format!("  {} = icmp ne i8* {}, null\n", reg, val));
+                reg
+            },
+            _ => val,
+        }
+    }
+
     fn compile_expr(&mut self, expr: &Expr) -> (String, VarType) {
         match expr {
             Expr::Number(n) => (format!("{}", n), VarType::Int),
             Expr::String(s) => {
                 let str_id = self.add_string(s.clone());
                 (str_id, VarType::Str)
+            }
+            Expr::Bool(b) => {
+                let val = if *b { "1" } else { "0" };
+                (val.to_string(), VarType::Bool)
+            }
+            Expr::Unary(op, inner) => {
+                let (val, vtype) = self.compile_expr(inner);
+                if op == &TokenType::Not {
+                    if vtype == VarType::Bool {
+                        let reg = self.get_reg();
+                        self.emit(&format!("  {} = xor i1 {}, 1\n", reg, val));
+                        (reg, VarType::Bool)
+                    } else {
+                        panic!("Not operator (!) only supports boolean values");
+                    }
+                } else {
+                    panic!("Unsupported unary operator: {:?}", op);
+                }
             }
             Expr::ArrayLiteral(_) => {
                 panic!("Array Literal can only be used in variable declaration!");
@@ -131,6 +167,7 @@ impl Compiler {
                     match &vtype { 
                         VarType::Int => { self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name)); }, 
                         VarType::Str => { self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name)); },
+                        VarType::Bool => { self.emit(&format!("  {} = load i1, i1* %{}_ptr\n", reg, name)); },
                         VarType::Instance(cls) => { self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name)); },
                         VarType::Array(_, _) => panic!("Arrays can only be accessed via index: {}[0]", name),
                     }
@@ -439,11 +476,58 @@ impl Compiler {
                     }
                     let args_str = arg_vals.join(", ");
                     let reg = self.get_reg();
-                    self.emit(&format!("  {} = call i32 @{}({})\n", reg, name, args_str));
-                    (reg, VarType::Int)
+                    self.emit(&format!("  {} = call i8* @{}({})\n", reg, name, args_str));
+                    let int_reg = self.get_reg();
+                    self.emit(&format!("  {} = ptrtoint i8* {} to i32\n", int_reg, reg));
+                    (int_reg, VarType::Int)
                 }
             }
             Expr::Binary(left, op, right) => {
+                if *op == TokenType::And {
+                    let l_label = self.get_label();
+                    let end_label = self.get_label();
+                    let res_ptr = self.get_reg();
+                    self.emit(&format!("  {} = alloca i1\n", res_ptr));
+                    
+                    let (l_val, l_type) = self.compile_expr(left);
+                    let l_i1 = self.cast_to_i1(l_val, l_type);
+                    self.emit(&format!("  store i1 0, i1* {}\n", res_ptr)); // Short-circuit: false
+                    self.emit(&format!("  br i1 {}, label %{}, label %{}\n", l_i1, l_label, end_label));
+                    
+                    self.emit(&format!("{}:\n", l_label));
+                    let (r_val, r_type) = self.compile_expr(right);
+                    let r_i1 = self.cast_to_i1(r_val, r_type);
+                    self.emit(&format!("  store i1 {}, i1* {}\n", r_i1, res_ptr));
+                    self.emit(&format!("  br label %{}\n", end_label));
+                    
+                    self.emit(&format!("{}:\n", end_label));
+                    let res_val = self.get_reg();
+                    self.emit(&format!("  {} = load i1, i1* {}\n", res_val, res_ptr));
+                    return (res_val, VarType::Bool);
+                }
+                if *op == TokenType::Or {
+                    let r_label = self.get_label();
+                    let end_label = self.get_label();
+                    let res_ptr = self.get_reg();
+                    self.emit(&format!("  {} = alloca i1\n", res_ptr));
+                    
+                    let (l_val, l_type) = self.compile_expr(left);
+                    let l_i1 = self.cast_to_i1(l_val, l_type);
+                    self.emit(&format!("  store i1 1, i1* {}\n", res_ptr)); // Short-circuit: true
+                    self.emit(&format!("  br i1 {}, label %{}, label %{}\n", l_i1, end_label, r_label));
+                    
+                    self.emit(&format!("{}:\n", r_label));
+                    let (r_val, r_type) = self.compile_expr(right);
+                    let r_i1 = self.cast_to_i1(r_val, r_type);
+                    self.emit(&format!("  store i1 {}, i1* {}\n", r_i1, res_ptr));
+                    self.emit(&format!("  br label %{}\n", end_label));
+                    
+                    self.emit(&format!("{}:\n", end_label));
+                    let res_val = self.get_reg();
+                    self.emit(&format!("  {} = load i1, i1* {}\n", res_val, res_ptr));
+                    return (res_val, VarType::Bool);
+                }
+
                 let (l_val, _) = self.compile_expr(left);
                 let (r_val, _) = self.compile_expr(right);
 
@@ -465,7 +549,7 @@ impl Compiler {
                         _ => unreachable!()
                     };
                     self.emit(&format!("  {} = icmp {} i32 {}, {}\n", reg, op_str, l_val, r_val));
-                    (reg, VarType::Int) 
+                    (reg, VarType::Bool) 
                 }
             }
         }
@@ -606,6 +690,12 @@ impl Compiler {
                             let ptr = self.get_reg();
                             self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr, val));
                             self.emit(&format!("  ret i8* {}\n", ptr));
+                        } else if vtype == VarType::Bool {
+                             let zext_reg = self.get_reg();
+                             self.emit(&format!("  {} = zext i1 {} to i32\n", zext_reg, val));
+                             let ptr = self.get_reg();
+                             self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr, zext_reg));
+                             self.emit(&format!("  ret i8* {}\n", ptr));
                         } else if val.starts_with("@str.") {
                              let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                              let ptr_reg = self.get_reg();
@@ -616,7 +706,13 @@ impl Compiler {
                         }
                     } else {
                         // In main: use i32
-                        self.emit(&format!("  ret i32 {}\n", val));
+                        if vtype == VarType::Bool {
+                             let zext_reg = self.get_reg();
+                             self.emit(&format!("  {} = zext i1 {} to i32\n", zext_reg, val));
+                             self.emit(&format!("  ret i32 {}\n", zext_reg));
+                        } else {
+                             self.emit(&format!("  ret i32 {}\n", val));
+                        }
                     }
                 } else {
                     if self.is_in_function { self.emit("  ret i8* null\n"); }
@@ -634,6 +730,7 @@ impl Compiler {
                     let llvm_type = match elem_vtype {
                         VarType::Int => "i32",
                         VarType::Str => "i8*",
+                        VarType::Bool => "i1",
                         _ => "i32"
                     };
 
@@ -674,6 +771,10 @@ impl Compiler {
                              self.emit(&format!("  %{}_ptr = alloca i8*\n", name));
                              self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", val, name));
                         },
+                        VarType::Bool => {
+                             self.emit(&format!("  %{}_ptr = alloca i1\n", name));
+                             self.emit(&format!("  store i1 {}, i1* %{}_ptr\n", val, name));
+                        },
                         _ => panic!("Unsupported var type decl")
                     }
                     self.var_types.insert(name.clone(), vtype);
@@ -685,6 +786,7 @@ impl Compiler {
                  match vtype {
                      VarType::Int => { self.emit(&format!("  store i32 {}, i32* %{}_ptr\n", val, name)); }
                      VarType::Str => { self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", val, name)); }
+                     VarType::Bool => { self.emit(&format!("  store i1 {}, i1* %{}_ptr\n", val, name)); }
                      VarType::Instance(cls) => {
                           self.emit(&format!("  store %struct.{}* {}, %struct.{}** %{}_ptr\n", cls, val, cls, name));
                      }
@@ -698,19 +800,25 @@ impl Compiler {
                 let (val, vtype) = self.compile_expr(expr);
                 match vtype {
                     VarType::Int => { self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_num, i32 0, i32 0), i32 {})\n", val)); }
-                    VarType::Str => {
-                         if val.starts_with("@") {
-                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
-                             self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* getelementptr inbounds ([{} x i8], [{} x i8]* {}, i32 0, i32 0))\n", str_len, str_len, val));
-                         } else {
-                             self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", val));
-                         }
-                    }
-                    _ => panic!("This type cannot be printed directly (try printing a field)"),
+                     VarType::Str => {
+                          if val.starts_with("@") {
+                              let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
+                              self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* getelementptr inbounds ([{} x i8], [{} x i8]* {}, i32 0, i32 0))\n", str_len, str_len, val));
+                          } else {
+                              self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", val));
+                          }
+                     }
+                     VarType::Bool => {
+                         let zext_reg = self.get_reg();
+                         self.emit(&format!("  {} = zext i1 {} to i32\n", zext_reg, val));
+                         self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_num, i32 0, i32 0), i32 {})\n", zext_reg));
+                     }
+                     _ => panic!("This type cannot be printed directly (try printing a field)"),
                 }
             }
             Stmt::IfStmt(cond, then_block, else_block_opt) => {
-                let (cond_reg, _) = self.compile_expr(cond);
+                let (val, vtype) = self.compile_expr(cond);
+                let cond_reg = self.cast_to_i1(val, vtype);
                 let label_then = self.get_label();
                 let label_else = self.get_label();
                 let label_merge = self.get_label(); 
@@ -733,7 +841,8 @@ impl Compiler {
                 let label_end = self.get_label();
                 self.emit(&format!("  br label %{}\n", label_cond));
                 self.emit(&format!("{}:\n", label_cond));
-                let (cond_reg, _) = self.compile_expr(cond);
+                let (val, vtype) = self.compile_expr(cond);
+                let cond_reg = self.cast_to_i1(val, vtype);
                 self.emit(&format!("  br i1 {}, label %{}, label %{}\n", cond_reg, label_body, label_end));
                 self.emit(&format!("{}:\n", label_body));
                 self.compile_block(block);
