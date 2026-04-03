@@ -10,7 +10,7 @@ class Handler {
 func main() {
     var h = new Handler();
     std.io.print("Starting namespaced server on 8082...");
-    std.net.api_listen(8082, h);
+    std.net.api_listen(9892, h);
 }
 
 main();
