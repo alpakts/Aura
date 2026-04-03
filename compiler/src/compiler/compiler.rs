@@ -122,10 +122,9 @@ impl Compiler {
         if s.contains("call ") && s.contains("@") {
              if let Some(start) = s.find('@') {
                  let rest = &s[start + 1..];
-                 if let Some(end) = rest.find('(') {
-                     let func_name = rest[..end].trim();
-                     self.required_symbols.insert(func_name.to_string());
-                 }
+                 let func_end = rest.find('(').or_else(|| rest.find(' ')).unwrap_or(rest.len());
+                 let func_name = rest[..func_end].trim();
+                 self.required_symbols.insert(func_name.to_string());
              }
         }
     }
@@ -154,38 +153,9 @@ impl Compiler {
                 let (port_val, _) = self.compile_expr(&args[0]);
                 let (obj_val, obj_type) = self.compile_expr(&args[1]);
                 if let VarType::Instance(class_name) = obj_type {
-                    // --- SOCKET RUNTIME (Moved from core) ---
-                    if self.target_os == TargetOs::Windows {
-                        let wsa_data = self.get_reg();
-                        self.emit(&format!("  {} = alloca [512 x i8]\n", wsa_data)); 
-                        let wsa_ptr = self.get_reg();
-                        self.emit(&format!("  {} = getelementptr inbounds [512 x i8], [512 x i8]* {}, i32 0, i32 0\n", wsa_ptr, wsa_data));
-                        self.emit(&format!("  call i32 @WSAStartup(i32 514, i8* {})\n", wsa_ptr));
-                    }
-
+                    // --- AURA RUNTIME SETUP ---
                     let sock = self.get_reg();
-                    self.emit(&format!("  {} = call i32 @socket(i32 2, i32 1, i32 6)\n", sock));
-                    let addr = self.get_reg();
-                    self.emit(&format!("  {} = alloca [16 x i8]\n", addr)); 
-                    let addr_ptr = self.get_reg();
-                    self.emit(&format!("  {} = getelementptr inbounds [16 x i8], [16 x i8]* {}, i32 0, i32 0\n", addr_ptr, addr));
-                    self.emit(&format!("  call void @llvm.memset.p0i8.i32(i8* {}, i8 0, i32 16, i1 false)\n", addr_ptr));
-                    
-                    let fam_i16 = self.get_reg();
-                    self.emit(&format!("  {} = bitcast i8* {} to i16*\n", fam_i16, addr_ptr));
-                    self.emit(&format!("  store i16 2, i16* {}\n", fam_i16));
-                    
-                    let port_ptr = self.get_reg();
-                    self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i32 2\n", port_ptr, addr_ptr));
-                    let port_ptr_16 = self.get_reg();
-                    self.emit(&format!("  {} = bitcast i8* {} to i16*\n", port_ptr_16, port_ptr));
-                    let port_i32 = self.get_reg();
-                    self.emit(&format!("  {} = call i16 @htons(i16 {})\n", port_i32, port_val));
-                    self.emit(&format!("  store i16 {}, i16* {}\n", port_i32, port_ptr_16));
-
-                    self.emit(&format!("  call i32 @bind(i32 {}, i8* {}, i32 16)\n", sock, addr_ptr));
-                    self.emit(&format!("  call i32 @listen(i32 {}, i32 5)\n", sock));
-                    self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @fmt_api_start, i32 0, i32 0), i32 {})\n", port_val));
+                    self.emit(&format!("  {} = call i32 @aura_net_setup(i32 {})\n", sock, port_val));
 
                     // Server Loop
                     let start_label = self.get_label();
@@ -213,19 +183,21 @@ impl Compiler {
                             let m_val = self.add_string(m.to_string());
                             let m_ptr = self.get_reg();
                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
-                            let str_match = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* {})\n", str_match, buf_ptr, m_ptr));
+                            
                             let is_match = self.get_reg();
-                            self.emit(&format!("  {} = icmp ne i8* {}, null\n", is_match, str_match));
+                            self.emit(&format!("  {} = call i32 @aura_str_contains(i8* {}, i8* {})\n", is_match, buf_ptr, m_ptr));
+                            
+                            let is_match_bool = self.get_reg();
+                            self.emit(&format!("  {} = icmp eq i32 {}, 1\n", is_match_bool, is_match));
                             let l_then = self.get_label();
                             let l_next = self.get_label();
-                            self.emit(&format!("  br i1 {}, label %{}, label %{}\n", is_match, l_then, l_next));
+                            self.emit(&format!("  br i1 {}, label %{}, label %{}\n", is_match_bool, l_then, l_next));
                             
                             self.emit(&format!("{}:\n", l_then));
                             // Simple parameter parsing
                             let q_mark = self.add_string("?".to_string());
                             let q_ptr = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", q_ptr, buf_ptr, q_mark));
+                            self.emit(&format!("  {} = call i8* @aura_str_find(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", q_ptr, buf_ptr, q_mark));
                             let p_val_final = self.get_reg();
                             self.emit(&format!("  {} = alloca i32\n", p_val_final));
                             self.emit(&format!("  store i32 0, i32* {}\n", p_val_final));
@@ -239,7 +211,7 @@ impl Compiler {
                             self.emit(&format!("{}:\n", l_q_then));
                             let eq_val = self.add_string("=".to_string());
                             let eq_ptr = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", eq_ptr, q_ptr, eq_val));
+                            self.emit(&format!("  {} = call i8* @aura_str_find(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", eq_ptr, q_ptr, eq_val));
                             let has_eq = self.get_reg();
                             self.emit(&format!("  {} = icmp ne i8* {}, null\n", has_eq, eq_ptr));
                             let l_eq_then = self.get_label();
@@ -265,12 +237,7 @@ impl Compiler {
                             self.emit(&format!("{}:\n", l_next));
                         }
                     }
-
-                    if self.target_os == TargetOs::Windows {
-                        self.emit(&format!("  call i32 @closesocket(i32 {})\n", client_sock));
-                    } else {
-                        self.emit(&format!("  call i32 @close(i32 {})\n", client_sock));
-                    }
+                    self.emit(&format!("  call void @aura_close_socket(i32 {})\n", client_sock));
                     self.emit(&format!("  br label %{}\n", start_label));
                     ("0".to_string(), VarType::Int)
                 } else { panic!("api_listen requires a class instance."); }
@@ -284,9 +251,9 @@ impl Compiler {
             "print" | "println" => {
                 let (val, vtype) = self.compile_expr(&args[0]);
                 if vtype == VarType::Int {
-                    self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_num, i32 0, i32 0), i32 {})\n", val));
+                    self.emit(&format!("  call void @aura_print_int(i32 {})\n", val));
                 } else if vtype == VarType::Str {
-                    self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", val));
+                    self.emit(&format!("  call void @aura_print_str(i8* {})\n", val));
                 }
                 ("0".to_string(), VarType::Int)
             },
@@ -1111,18 +1078,17 @@ impl Compiler {
                 "free" => decls.insert("declare void @free(i8*)"),
                 "atoi" => decls.insert("declare i32 @atoi(i8*)"),
                 "strlen" => decls.insert("declare i32 @strlen(i8*)"),
-                "strstr" => decls.insert("declare i8* @strstr(i8*, i8*)"),
-                "htons" => decls.insert("declare i16 @htons(i16)"),
-                "socket" => decls.insert("declare i32 @socket(i32, i32, i32)"),
-                "bind" => decls.insert("declare i32 @bind(i32, i8*, i32)"),
-                "listen" => decls.insert("declare i32 @listen(i32, i32)"),
                 "accept" => decls.insert("declare i32 @accept(i32, i8*, i32*)"),
                 "recv" => decls.insert("declare i32 @recv(i32, i8*, i32, i32)"),
                 "send" => decls.insert("declare i32 @send(i32, i8*, i32, i32)"),
-                "WSAStartup" => decls.insert("declare i32 @WSAStartup(i32, i8*)"),
-                "closesocket" => decls.insert("declare i32 @closesocket(i32)"),
-                "close" => decls.insert("declare i32 @close(i32)"),
                 "system" => decls.insert("declare i32 @system(i8*)"),
+                // --- AURA RUNTIME INTERFACE ---
+                "aura_net_setup" => decls.insert("declare i32 @aura_net_setup(i32)"),
+                "aura_close_socket" => decls.insert("declare void @aura_close_socket(i32)"),
+                "aura_print_int" => decls.insert("declare void @aura_print_int(i32)"),
+                "aura_print_str" => decls.insert("declare void @aura_print_str(i8*)"),
+                "aura_str_contains" => decls.insert("declare i32 @aura_str_contains(i8*, i8*)"),
+                "aura_str_find" => decls.insert("declare i8* @aura_str_find(i8*, i8*)"),
                 _ => false, // User function or unknown
             };
         }

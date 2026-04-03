@@ -7,28 +7,31 @@ use compiler::parser::Parser;
 use compiler::compiler::Compiler;
 
 /// Visual Studio yollarını otomatik bulmak için yardımcı fonksiyon
-fn find_msvc_paths() -> Option<Vec<PathBuf>> {
+fn find_msvc_paths() -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
     println!("🔍 Searching for Visual Studio & Windows SDK libraries...");
     
     // Windows Registry üzerinden kütüphane yollarını tara
     #[cfg(windows)]
     {
         use cc::windows_registry;
-        // Host target için bir tool bulmaya çalış
         if let Some(tool) = windows_registry::find_tool("x86_64-pc-windows-msvc", "cl.exe") {
-            let mut paths = Vec::new();
+            let mut lib_paths = Vec::new();
+            let mut include_paths = Vec::new();
             
-            // Linker path'lerini doğrudan OsString olarak işle
             for path in tool.env() {
                 if path.0 == "LIB" {
                     for p in std::env::split_paths(&path.1) {
-                        paths.push(p);
+                        lib_paths.push(p);
+                    }
+                } else if path.0 == "INCLUDE" {
+                    for p in std::env::split_paths(&path.1) {
+                        include_paths.push(p);
                     }
                 }
             }
-            if !paths.is_empty() {
-                println!("✅ Found {} library search paths in system.", paths.len());
-                return Some(paths);
+            if !lib_paths.is_empty() {
+                println!("✅ Found {} library and {} include search paths in system.", lib_paths.len(), include_paths.len());
+                return Some((lib_paths, include_paths));
             }
         }
     }
@@ -39,7 +42,7 @@ fn find_msvc_paths() -> Option<Vec<PathBuf>> {
             let local_lib = parent.parent().unwrap_or(parent).join("lib");
             if local_lib.exists() {
                 println!("✅ Found local library path: {:?}", local_lib);
-                return Some(vec![local_lib]);
+                return Some((vec![local_lib], Vec::new()));
             }
         }
     }
@@ -120,9 +123,14 @@ fn main() {
         .arg("-Wno-override-module");
 
     // EĞER KÜTÜPHANELER BULUNDUYSA LİNKERE EKLE
-    if let Some(lib_paths) = find_msvc_paths() {
+    if let Some((lib_paths, include_paths)) = find_msvc_paths() {
         for p in lib_paths {
             let mut arg_val = String::from("-L");
+            arg_val.push_str(p.to_str().unwrap_or(""));
+            clang_cmd.arg(arg_val);
+        }
+        for p in include_paths {
+            let mut arg_val = String::from("-I");
             arg_val.push_str(p.to_str().unwrap_or(""));
             clang_cmd.arg(arg_val);
         }
@@ -139,6 +147,25 @@ fn main() {
         clang_cmd.arg("-lmsvcrt");
         clang_cmd.arg("-llegacy_stdio_definitions");
         clang_cmd.arg("-lws2_32");
+    }
+
+    // --- AURA RUNTIME INTEGRATION ---
+    // Try to find aura_runtime.c in the project source or relative to exe
+    if let Ok(exe_p) = std::env::current_exe() {
+        if let Some(p) = exe_p.parent() {
+            // Development: compiler/target/debug/aura.exe -> proj_root is compiler/
+            let proj_root = p.parent().unwrap_or(p).parent().unwrap_or(p);
+            let runtime_file = proj_root.join("src").join("compiler").join("aura_runtime.c");
+            if runtime_file.exists() {
+                clang_cmd.arg(runtime_file);
+            } else {
+                // Try nearby (for standalone release)
+                let alt_runtime = p.join("aura_runtime.c");
+                if alt_runtime.exists() {
+                    clang_cmd.arg(alt_runtime);
+                }
+            }
+        }
     }
 
     match clang_cmd.output() {
