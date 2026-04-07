@@ -1,3 +1,5 @@
+import "system";
+
 class User {
     var userId;
     var username;
@@ -12,7 +14,7 @@ class UserController {
     }
 
     func getUser(id) {
-        var tpl = read_file("views/profile.html");
+        var tpl = system.io.read_file("views/profile.html");
         
         var u = new User();
         u.userId = id;
@@ -21,12 +23,12 @@ class UserController {
         if (id == 1) { u.username = "Alper"; }
         if (id == 2) { u.username = "Aura AI"; }
         
-        return render(tpl, u);
+        return system.mvc.render(tpl, u);
     }
 
     func getUsers(id) {
-        var tpl = read_file("views/users.html");
-        var itemTpl = read_file("views/user_item.html");
+        var tpl = system.io.read_file("views/users.html");
+        var itemTpl = system.io.read_file("views/user_item.html");
         
         // Proper Mock with User Model
         var u1 = new User(); u1.username = "Alper"; u1.userId = 1; u1.rank = 10;
@@ -41,11 +43,11 @@ class UserController {
         var u10 = new User(); u10.username = "Mars"; u10.userId = 10; u10.rank = 1;
 
         var users = [u1, u2, u3, u4, u5, u6, u7, u8, u9, u10];
-        return render_list(tpl, "{users_list}", users, itemTpl);
+        return system.mvc.render_list(tpl, "{users_list}", users, itemTpl);
     }
 
     func getStatus(dummy) {
-        return read_file("views/status.html");
+        return system.io.read_file("views/status.html");
     }
 }
 

@@ -1,59 +1,98 @@
 import "lib.aur";
-import "std";
+import "system";
 
-print_str("--- Aura Ultimate Experience Demo ---");
-
-// 1. Console Input & Boolean Logic
-print_str("Enter your name:");
-var name = input_str();
-print_str("Welcome:");
-print_str(name);
-
-print_str("What is your age?");
-var age = input();
-
-var isAdult = age >= 18;
-if (isAdult) {
-    print_str("You are an adult Aura user!");
-} else {
-    print_str("You are a young Aura user!");
+// ---------------------------------------------------------
+// 1. GLOBAL FUNCTIONS & RECURSION
+// ---------------------------------------------------------
+func factorial(n) {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
 }
 
-// 2. Arrays & For Loops
-var powers = [1, 2, 4, 8, 16];
-print_str("First 5 powers of 2:");
-for (var i = 0; i < 5; i = i + 1) {
-    print(powers[i]);
+// ---------------------------------------------------------
+// 2. DATA MODELS (Classes)
+// ---------------------------------------------------------
+class Stats {
+    var count;
+    var total;
+
+    func init() {
+        this.count = 0;
+        this.total = 0;
+    }
+
+    func add(val) {
+        this.total = this.total + val;
+        this.count = this.count + 1;
+    }
+
+    func average() {
+        if (this.count == 0) { return 0; }
+        return this.total / this.count;
+    }
 }
 
-// 3. While Loops & Nested Logic
-var countdown = 3;
-print_str("Countdown starting...");
-while (countdown > 0) {
-    print(countdown);
-    countdown = countdown - 1;
+// ---------------------------------------------------------
+// 3. MAIN LOGIC
+// ---------------------------------------------------------
+print_str("================================================");
+print_str("        WELCOME TO AURA DEMO           ");
+print_str("================================================");
+
+// Interaction & system.io
+print_str("Please enter your name:");
+var username = system.io.input_str();
+print_str("Hello, " + username + "! Let's test your Aura.");
+
+// Recursion Test
+print_str("-> Calculating Factorial of 5 (Recursion):");
+var fact5 = factorial(5);
+print(fact5); // should be 120
+
+// OOP & State Management
+print_str("-> Testing Stats Class (OOP):");
+var s = new Stats();
+s.init();
+s.add(10);
+s.add(20);
+s.add(30);
+print_str("Average of [10, 20, 30]:");
+print(s.average());
+
+// Arrays & Nested Loops
+print_str("-> Testing Matrix-like Array manipulation:");
+var row1 = [1, 2, 3];
+var row2 = [4, 5, 6];
+var sum = 0;
+
+for (var i = 0; i < 3; i = i + 1) {
+    sum = sum + row1[i] + row2[i];
 }
-print_str("Liftoff!");
+print_str("Sum of two arrays [1,2,3] + [4,5,6]:");
+print(sum);
 
-// 4. Math Class Demo
-print_str("Testing Math Class:");
-var m = new Math();
-print_str("3 + 7 =");
-print(m.add(3, 7));
-print_str("10 - 4 =");
-print(m.sub(10, 4));
-print_str("5 * 5 =");
-print(m.mul(5, 5));
-print_str("20 / 4 =");
-print(m.div(20, 4));
-print_str("2^3 =");
-print(m.pow(2, 3));
+// Boolean Logic & Short-circuiting
+print_str("-> Boolean logic check (18+ and admin):");
+var age = 25;
+var isAdmin = 1;
+if (age >= 18 && isAdmin == 1) {
+    print_str("Access Granted: Administrator level.");
+}
 
-// 5. API & MVC Integration
-print_str("Launching API Server...");
-var api = new UserController();
-api.init();
+// ---------------------------------------------------------
+// 4. API & MVC SERVICE (The Grand Finale)
+// ---------------------------------------------------------
+print_str("-> Launching High-Performance MVC Web Server...");
+var controller = new UserController();
+controller.init();
 
-print_str("Try: http://localhost:8080/getUser?id=1");
-print_str("Try: http://localhost:8080/getUsers");
-api_listen(8080, api);
+print_str("------------------------------------------------");
+print_str("Aura Server is LIVE on http://localhost:8080");
+print_str("Routes available:");
+print_str("1. /getUser?id=1    -> Single User Profile");
+print_str("2. /getUsers        -> List of Users (MVC List Render)");
+print_str("3. /getStatus       -> Server Health Check");
+print_str("------------------------------------------------");
+
+// Start the C-powered native server loop
+system.net.api_listen(8080, controller);

@@ -37,11 +37,13 @@ pub struct Compiler {
     pub target_os: TargetOs,
     scope_stack: Vec<Vec<String>>, // Stack of blocks, each containing variable names (Instances) to cleanup
     block_terminated: bool, // Tracking if 'ret' or 'br' was emitted in current block
-    std_modules: Vec<String>, // Tracks imported standard library modules (e.g. "std.net")
+    system_modules: Vec<String>, // Tracks imported system library modules (e.g. "system.net")
     required_symbols: HashSet<String>, // LAZY DECLARATIONS
 }
 
 impl Compiler {
+    /// Initializes a new Compiler instance with the appropriate target OS.
+    /// By default, it detects the host operating system to set the TargetOs.
     pub fn new() -> Self {
         #[cfg(target_os = "windows")]
         let target = TargetOs::Windows;
@@ -68,23 +70,30 @@ impl Compiler {
             target_os: target,
             scope_stack: Vec::new(),
             block_terminated: false,
-            std_modules: Vec::new(),
+            system_modules: Vec::new(),
             required_symbols: HashSet::new(),
         }
     }
 
+    /// Generates a unique LLVM register name (e.g., %tmp1, %tmp2).
+    /// Used for storing temporary intermediate results in LLVM IR.
     fn get_reg(&mut self) -> String {
         let r = format!("%tmp{}", self.reg_counter);
         self.reg_counter += 1;
         r
     }
     
+    /// Generates a unique LLVM label name (e.g., L1, L2).
+    /// These labels are used for branching (br) and conditional jumps.
     fn get_label(&mut self) -> String {
         let l = format!("L{}", self.label_counter);
         self.label_counter += 1;
         l
     }
 
+    /// Registers a string literal into the global string pool.
+    /// Returns the LLVM global variable name (e.g., @str.0).
+    /// If the string is already registered, it returns the existing handle.
     fn add_string(&mut self, s: String) -> String {
         // Check if string already exists
         if let Some((id, _, _)) = self.string_literals.iter().find(|(_, content, _)| content == &s) {
@@ -98,6 +107,8 @@ impl Compiler {
         format!("@str.{}", id)
     }
 
+    /// Appends LLVM IR code to the current code buffer (function or main body).
+    /// Automatically handles block termination rules (ret, br) and lazy symbol extraction.
     fn emit(&mut self, s: &str) {
         let trimmed = s.trim_start();
         
@@ -129,24 +140,29 @@ impl Compiler {
         }
     }
 
+    /// Validates and handles system library calls (system.net, system.io, system.mvc).
+    /// Ensures that the required modules are imported before allowing access.
     fn resolve_stdlib_call(&mut self, parts: &[String], args: &[Expr]) -> (String, VarType) {
         match parts[0].as_str() {
-            "std" => {
-                if !self.std_modules.contains(&"std".to_string()) {
-                    panic!("Standard Library modules (std.*) require 'import \"std\";'");
+            "system" => {
+                if !self.system_modules.contains(&"system".to_string()) {
+                    panic!("System Library modules (system.*) require 'import \"system\";'");
                 }
-                if parts.len() < 3 { panic!("Invalid std call. Expected e.g. std.net.listen"); }
+                if parts.len() < 3 { panic!("Invalid system call. Expected e.g. system.net.api_listen"); }
                 match parts[1].as_str() {
-                    "net" => self.emit_std_net_dispatch(&parts[2], args),
-                    "io" => self.emit_std_io_dispatch(&parts[2], args),
-                    _ => panic!("Unknown std module: {}", parts[1])
+                    "net" => self.emit_system_net_dispatch(&parts[2], args),
+                    "io" => self.emit_system_io_dispatch(&parts[2], args),
+                    "mvc" => self.emit_system_mvc_dispatch(&parts[2], args),
+                    _ => panic!("Unknown system module: {}", parts[1])
                 }
             },
-            _ => panic!("Not a standard library namespace: {}", parts[0])
+            _ => panic!("Not a system library namespace: {}", parts[0])
         }
     }
 
-    fn emit_std_net_dispatch(&mut self, method: &str, args: &[Expr]) -> (String, VarType) {
+    /// Generates LLVM IR for the modern Aura MVC networking system (system.net.api_listen).
+    /// Handles socket setup, MVC route registration, and starting the server loop.
+    fn emit_system_net_dispatch(&mut self, method: &str, args: &[Expr]) -> (String, VarType) {
         match method {
             "api_listen" => {
                 let (port_val, _) = self.compile_expr(&args[0]);
@@ -157,20 +173,20 @@ impl Compiler {
                     let sock = self.get_reg();
                     self.emit(&format!("  {} = call i64 @aura_net_setup(i64 {})\n", sock, port_val));
 
-                    // 2. RotalarÄ± Kaydet (SÄ±nÄ±f metodlarÄ±nÄ± register et)
+                    // 2. Register Routes (Class methods)
                     if let Some(methods) = self.class_methods.get(&class_name).cloned() {
                         for m in methods {
                             let m_val = self.add_string(m.to_string());
                             let m_ptr = self.get_reg();
                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
                             
-                            // Fonksiyon pointer'Ä±nÄ± al (fn_Class_Method)
+                            // Get function pointer (fn_Class_Method)
                             let fn_name = format!("fn_{}_{}", class_name, m);
                             self.emit(&format!("  call void @aura_mvc_register(i8* {}, i8* bitcast (i8* (%struct.{}*, i64)* @{} to i8*))\n", m_ptr, class_name, fn_name));
                         }
                     }
 
-                    // 3. MVC Sunucusunu BaÅŸlat (Sonsuz DÃ¶ngÃ¼ C tarafÄ±nda)
+                    // 3. Start MVC Server (Infinite Loop in C)
                     let cast_reg = self.get_reg();
                     self.emit(&format!("  {} = bitcast %struct.{}* {} to i8*\n", cast_reg, class_name, obj_val));
                     self.emit(&format!("  call void @aura_mvc_serve(i64 {}, i8* {})\n", sock, cast_reg));
@@ -178,11 +194,12 @@ impl Compiler {
                     ("0".to_string(), VarType::Int)
                 } else { panic!("api_listen requires a class instance."); }
             },
-            _ => panic!("Unknown std.net method: {}", method)
+            _ => panic!("Unknown system.net method: {}", method)
         }
     }
 
-    fn emit_std_io_dispatch(&mut self, method: &str, args: &[Expr]) -> (String, VarType) {
+    /// Dispatches standard I/O calls to their corresponding LLVM IR generations (system.io).
+    fn emit_system_io_dispatch(&mut self, method: &str, args: &[Expr]) -> (String, VarType) {
         match method {
             "print" | "println" => {
                 let (val, vtype) = self.compile_expr(&args[0]);
@@ -193,10 +210,126 @@ impl Compiler {
                 }
                 ("0".to_string(), VarType::Int)
             },
-            _ => panic!("Unknown std.io method: {}", method)
+            "read_file" => {
+                let (path_val, _) = self.compile_expr(&args[0]);
+                let reg = self.get_reg();
+                let final_ptr = if path_val.starts_with("@str.") {
+                     let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == path_val).unwrap().2;
+                     let p_reg = self.get_reg();
+                     self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, path_val));
+                     p_reg
+                } else {
+                     path_val
+                };
+                self.emit(&format!("  {} = call i8* @aura_read_file(i8* {})\n", reg, final_ptr));
+                (reg, VarType::Str)
+            },
+            "input" => {
+                let ptr_reg = self.get_reg();
+                self.emit(&format!("  {} = alloca i64\n", ptr_reg));
+                self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_num, i64 0, i64 0), i64* {})\n", ptr_reg));
+                let val_reg = self.get_reg();
+                self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
+                (val_reg, VarType::Int)
+            },
+            "input_str" => {
+                let malloc_reg = self.get_reg();
+                self.emit(&format!("  {} = call i8* @malloc(i64 256)\n", malloc_reg));
+                self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i64 0, i64 0), i8* {})\n", malloc_reg));
+                (malloc_reg, VarType::Str)
+            },
+            _ => panic!("Unknown system.io method: {}", method)
         }
     }
 
+    /// Dispatches MVC related calls (system.mvc).
+    fn emit_system_mvc_dispatch(&mut self, method: &str, args: &[Expr]) -> (String, VarType) {
+        match method {
+            "render" => {
+                if args.len() == 2 {
+                    let (tpl_val, _) = self.compile_expr(&args[0]);
+                    let (obj_val, obj_type) = self.compile_expr(&args[1]);
+                    
+                    let mut current_tpl = if tpl_val.starts_with("@str.") {
+                         let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == tpl_val).unwrap().2;
+                         let p_reg = self.get_reg();
+                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, tpl_val));
+                         p_reg
+                    } else { tpl_val };
+
+                    if let VarType::Instance(class_name) = obj_type {
+                        let fields = self.classes.get(&class_name).unwrap().clone();
+                        for (i, field_name) in fields.iter().enumerate() {
+                            let placeholder = format!("{{model.{}}}", field_name);
+                            let p_id = self.add_string(placeholder.clone());
+                            let p_ptr = self.get_reg();
+                            let p_len = placeholder.len() + 1;
+                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_ptr, p_len, p_len, p_id));
+
+                            let ptr_reg = self.get_reg();
+                            self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", ptr_reg, class_name, class_name, obj_val, i));
+                            let val_reg = self.get_reg();
+                            self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
+
+                            let next_tpl = self.get_reg();
+                            self.emit(&format!("  {} = call i8* @aura_render_field(i8* {}, i8* {}, i64 {})\n", next_tpl, current_tpl, p_ptr, val_reg));
+                            current_tpl = next_tpl;
+                        }
+                        (current_tpl, VarType::Str)
+                    } else { panic!("render expects a class instance."); }
+                } else if args.len() == 3 {
+                    let (tpl_val, _) = self.compile_expr(&args[0]);
+                    let (key_val, _) = self.compile_expr(&args[1]);
+                    let (val_val, val_type) = self.compile_expr(&args[2]);
+                    
+                    let final_val = if val_type == VarType::Int {
+                        let s_reg = self.get_reg();
+                        self.emit(&format!("  {} = call i8* @aura_int_to_str(i64 {})\n", s_reg, val_val));
+                        s_reg
+                    } else { val_val };
+
+                    let res_reg = self.get_reg();
+                    self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
+                    (res_reg, VarType::Str)
+                } else { panic!("render() takes 2 or 3 arguments."); }
+            },
+            "render_list" => {
+                let (tpl_val, _) = self.compile_expr(&args[0]);
+                let (tag_val, _) = self.compile_expr(&args[1]);
+                let (_arr_val, arr_type) = self.compile_expr(&args[2]);
+                let (item_tpl_val, _) = self.compile_expr(&args[3]);
+
+                if let VarType::Array(elem_type, len) = arr_type {
+                    if let VarType::Instance(class_name) = *elem_type {
+                        let field_names = self.classes.get(&class_name).unwrap().join(",");
+                        let f_id = self.add_string(field_names.clone());
+                        let f_ptr = self.get_reg();
+                        let f_len = field_names.len() + 1;
+                        self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", f_ptr, f_len, f_len, f_id));
+
+                        let arr_ptr = self.get_reg();
+                        self.emit(&format!("  {} = bitcast [{} x i64]* %{}_ptr to i64*\n", arr_ptr, len, match &args[2] { 
+                            Expr::Variable(n) => n,
+                            _ => panic!("render_list expects an array variable.")
+                        }));
+
+                        let list_html = self.get_reg();
+                        self.emit(&format!("  {} = call i8* @aura_mvc_render_list(i8* {}, i64* {}, i32 {}, i8* {})\n", 
+                            list_html, item_tpl_val, arr_ptr, len, f_ptr));
+
+                        let res_reg = self.get_reg();
+                        self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", 
+                            res_reg, tpl_val, tag_val, list_html));
+                        (res_reg, VarType::Str)
+                    } else { panic!("render_list requires an array of class instances."); }
+                } else { panic!("render_list requires an array variable."); }
+            },
+            _ => panic!("Unknown system.mvc method: {}", method)
+        }
+    }
+
+    /// Casts an Aura variable (Int, Str, Bool) to a standard LLVM i1 boolean.
+    /// Used for conditional branches (br i1).
     fn cast_to_i1(&mut self, val: String, vtype: VarType) -> String {
         match vtype {
             VarType::Bool => val,
@@ -214,6 +347,29 @@ impl Compiler {
         }
     }
 
+    /// Helper to ensure a value is a string (i8*) for concatenation or other operations.
+    /// Handles static strings, dynamic strings, and auto-casts integers to strings.
+    fn ensure_string(&mut self, val: String, vtype: VarType) -> String {
+        if vtype == VarType::Str {
+            if val.starts_with("@str.") {
+                 let str_id_val = val.to_string();
+                 let str_info = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == str_id_val).unwrap();
+                 let str_len = str_info.2;
+                 let ptr_reg = self.get_reg();
+                 self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, str_id_val));
+                 ptr_reg
+            } else { val }
+        } else if vtype == VarType::Int {
+            let s_reg = self.get_reg();
+            self.emit(&format!("  {} = call i8* @aura_int_to_str(i64 {})\n", s_reg, val));
+            s_reg
+        } else {
+             val
+        }
+    }
+
+    /// Legacy API Server implementation (for backwards compatibility).
+    /// Sets up a native TCP listener and handles basic HTTP request routing.
     fn emit_api_runtime(&mut self, port: String, obj_val: String, class_name: String) -> (String, VarType) {
         // --- Initialize Socket ---
         if self.target_os == TargetOs::Windows {
@@ -367,6 +523,9 @@ impl Compiler {
         }
     }
 
+    /// The core recursive expression compiler.
+    /// Translates Aura expressions (AST) into specific LLVM IR instructions.
+    /// Returns a tuple containing the LLVM value (register or literal) and its Aura VarType.
     fn compile_expr(&mut self, expr: &Expr) -> (String, VarType) {
         match expr {
             Expr::Number(n) => (format!("{}", n), VarType::Int),
@@ -492,14 +651,28 @@ impl Compiler {
                  } else { panic!("'{}' is not an array!", name); }
             }
             Expr::MethodCall(obj_expr, method_name, args) => {
-                // Check if it's a namespaced standard library call: std.net.api_listen()
+                // Check if it's a namespaced system library call: system.net.api_listen()
                 if let Some(full_name) = self.resolve_full_name(obj_expr) {
                     let full_call = format!("{}.{}", full_name, method_name);
-                    if full_call == "std.net.api_listen" || (full_call == "api_listen" && !self.std_modules.is_empty()) {
+                    if full_call == "system.net.api_listen" || (full_call == "api_listen" && !self.system_modules.is_empty()) {
                          let (port_val, _) = self.compile_expr(&args[0]);
                          let (obj_val, obj_type) = self.compile_expr(&args[1]);
                          if let VarType::Instance(class_name) = obj_type {
-                             return self.emit_api_runtime(port_val, obj_val, class_name);
+                             let sock = self.get_reg();
+                             self.emit(&format!("  {} = call i64 @aura_net_setup(i64 {})\n", sock, port_val));
+                             if let Some(methods) = self.class_methods.get(&class_name).cloned() {
+                                 for m in methods {
+                                     let m_val = self.add_string(m.to_string());
+                                     let m_ptr = self.get_reg();
+                                     self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
+                                     let fn_name = format!("fn_{}_{}", class_name, m);
+                                     self.emit(&format!("  call void @aura_mvc_register(i8* {}, i8* bitcast (i8* (%struct.{}*, i64)* @{} to i8*))\n", m_ptr, class_name, fn_name));
+                                 }
+                             }
+                             let cast_reg = self.get_reg();
+                             self.emit(&format!("  {} = bitcast %struct.{}* {} to i8*\n", cast_reg, class_name, obj_val));
+                             self.emit(&format!("  call void @aura_mvc_serve(i64 {}, i8* {})\n", sock, cast_reg));
+                             return ("0".to_string(), VarType::Int);
                          } else { panic!("api_listen requires a class instance."); }
                     }
                 }
@@ -533,26 +706,23 @@ impl Compiler {
                 self.resolve_stdlib_call(parts, args)
             },
             Expr::Call(name, args) => {
-                if name == "api_listen" {
-                    // Backwards compatibility for api_listen(port, instance)
-                    // but according to architecture it should be std.net.api_listen
-                    return self.emit_std_net_dispatch("api_listen", args);
-                }
-                
+                // Core built-ins handled by system.io dispatch
                 if name == "print" || name == "println" {
-                    return self.emit_std_io_dispatch(name, args);
+                    return self.emit_system_io_dispatch(name, args);
                 }
 
                 if name == "print_str" {
                      let (val, vtype) = self.compile_expr(&args[0]);
                      if val.starts_with("@str.") {
-                         let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
+                         let str_id_val = val.to_string();
+                         let str_info = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == str_id_val).unwrap();
+                         let str_len = str_info.2;
                          let ptr_reg = self.get_reg();
-                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, val));
+                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, str_id_val));
                          self.emit(&format!("  call i64 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i64 0, i64 0), i8* {})\n", ptr_reg));
                      } else {
                          let final_ptr = if vtype == VarType::Str {
-                             val // Zaten i8* (input_str'den gelmiÅŸ olabilir)
+                             val 
                          } else {
                              let ptr_reg = self.get_reg();
                              self.emit(&format!("  {} = inttoptr i64 {} to i8*\n", ptr_reg, val));
@@ -560,175 +730,50 @@ impl Compiler {
                          };
                          self.emit(&format!("  call i64 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i64 0, i64 0), i8* {})\n", final_ptr));
                      }
-                     ("0".to_string(), VarType::Int) 
-                } else if name == "free" {
+                     return ("0".to_string(), VarType::Int); 
+                }
+                
+                if name == "free" {
                     let (obj_reg, obj_type) = self.compile_expr(&args[0]);
                     if let VarType::Instance(class_name) = obj_type {
                         let cast_reg = self.get_reg();
                         self.emit(&format!("  {} = bitcast %struct.{}* {} to i8*\n", cast_reg, class_name, obj_reg));
                         self.emit(&format!("  call void @free(i8* {})\n", cast_reg));
-                        ("0".to_string(), VarType::Int)
+                        return ("0".to_string(), VarType::Int);
                     } else {
-                        panic!("free() only supports class instances, got {:?}", obj_type);
+                        panic!("free() only supports class instances.");
                     }
-                } else if name == "input" {
-                    let ptr_reg = self.get_reg();
-                    self.emit(&format!("  {} = alloca i64\n", ptr_reg));
-                    self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_num, i64 0, i64 0), i64* {})\n", ptr_reg));
-                    let val_reg = self.get_reg();
-                    self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
-                    (val_reg, VarType::Int)
-                } else if name == "input_str" {
-                    let malloc_reg = self.get_reg();
-                    self.emit(&format!("  {} = call i8* @malloc(i64 256)\n", malloc_reg));
-                    self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i64 0, i64 0), i8* {})\n", malloc_reg));
-                    (malloc_reg, VarType::Str)
-                } else if name == "read_file" {
-                    let (path_val, _) = self.compile_expr(&args[0]);
-                    let reg = self.get_reg();
-                    let final_ptr = if path_val.starts_with("@str.") {
-                         let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == path_val).unwrap().2;
-                         let p_reg = self.get_reg();
-                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, path_val));
-                         p_reg
-                    } else {
-                         path_val
-                    };
-                    self.emit(&format!("  {} = call i8* @aura_read_file(i8* {})\n", reg, final_ptr));
-                    (reg, VarType::Str)
-                } else if name == "render" {
-                    if args.len() == 2 {
-                        let (tpl_val, _) = self.compile_expr(&args[0]);
-                        let (obj_val, obj_type) = self.compile_expr(&args[1]);
-                        
-                        // Ensure tpl_val is a pointer if it's a static string
-                        let mut current_tpl = if tpl_val.starts_with("@str.") {
-                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == tpl_val).unwrap().2;
-                             let p_reg = self.get_reg();
-                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, tpl_val));
-                             p_reg
-                        } else { tpl_val };
-
-                        if let VarType::Instance(class_name) = obj_type {
-                            let fields = self.classes.get(&class_name).unwrap().clone();
-                            for (i, field_name) in fields.iter().enumerate() {
-                                // Placeholder: {field_name}
-                                let placeholder = format!("{{model.{}}}", field_name);
-                                let p_id = self.str_counter;
-                                self.str_counter += 1;
-                                let p_len = placeholder.len() + 1;
-                                self.string_literals.push((p_id, placeholder, p_len));
-                                let p_ptr = self.get_reg();
-                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* @str.{}, i64 0, i64 0\n", p_ptr, p_len, p_len, p_id));
-
-                                // Load field from object
-                                let ptr_reg = self.get_reg();
-                                self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", ptr_reg, class_name, class_name, obj_val, i));
-                                let val_reg = self.get_reg();
-                                self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
-
-                                // Render using "Any" helper
-                                let next_tpl = self.get_reg();
-                                self.emit(&format!("  {} = call i8* @aura_render_field(i8* {}, i8* {}, i64 {})\n", next_tpl, current_tpl, p_ptr, val_reg));
-                                current_tpl = next_tpl;
-                            }
-                            (current_tpl, VarType::Str)
-                        } else {
-                            panic!("render(tpl, obj) expects a class instance as second argument.");
-                        }
-                    } else if args.len() == 3 {
-                        let (tpl_val, _) = self.compile_expr(&args[0]);
-                        let (key_val, _) = self.compile_expr(&args[1]);
-                        let (val_val, val_type) = self.compile_expr(&args[2]);
-                        
-                        let final_val = if val_type == VarType::Int {
-                            let s_reg = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @aura_int_to_str(i64 {})\n", s_reg, val_val));
-                            s_reg
-                        } else { val_val };
-
-                        let res_reg = self.get_reg();
-                        self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
-                        (res_reg, VarType::Str)
-                    } else {
-                        panic!("render() takes 2 or 3 arguments.");
-                    }
-                } else if name == "render_list" {
-                    if args.len() == 4 {
-                        // render_list(tpl, tag, array, itemTpl)
-                        let (tpl_val, _) = self.compile_expr(&args[0]);
-                        let (tag_val, _) = self.compile_expr(&args[1]);
-                        let (arr_val, arr_type) = self.compile_expr(&args[2]);
-                        let (item_tpl_val, _) = self.compile_expr(&args[3]);
-
-                        if let VarType::Array(elem_type, len) = arr_type {
-                            if let VarType::Instance(class_name) = *elem_type {
-                                let field_names = self.classes.get(&class_name).unwrap().join(",");
-                                let f_id = self.add_string(field_names.clone());
-                                let f_ptr = self.get_reg();
-                                let f_len = field_names.len() + 1;
-                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", f_ptr, f_len, f_len, f_id));
-
-                                let arr_ptr = self.get_reg();
-                                self.emit(&format!("  {} = bitcast [{} x i64]* %{}_ptr to i64*\n", arr_ptr, len, match &args[2] { 
-                                    Expr::Variable(n) => n,
-                                    _ => panic!("render_list expects an array variable.")
-                                }));
-
-                                let list_html = self.get_reg();
-                                self.emit(&format!("  {} = call i8* @aura_mvc_render_list(i8* {}, i64* {}, i32 {}, i8* {})\n", 
-                                    list_html, item_tpl_val, arr_ptr, len, f_ptr));
-
-                                let res_reg = self.get_reg();
-                                self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", 
-                                    res_reg, tpl_val, tag_val, list_html));
-                                (res_reg, VarType::Str)
-                            } else { panic!("render_list requires an array of class instances."); }
-                        } else { panic!("render_list requires an array variable."); }
-                    } else {
-                        panic!("render_list(tpl, tag, array, itemTpl) requires exactly 4 arguments.");
-                    }
-                } else if name == "api_listen" {
-                    // Check if std.net is imported
-                    if self.std_modules.contains(&"std.net".to_string()) || self.std_modules.contains(&"std".to_string()) {
-                        let (port_val, _) = self.compile_expr(&args[0]);
-                        let (obj_val, obj_type) = self.compile_expr(&args[1]);
-                        if let VarType::Instance(class_name) = obj_type {
-                            return self.emit_api_runtime(port_val, obj_val, class_name);
-                        } else { panic!("api_listen requires a class instance."); }
-                    } else {
-                        panic!("api_listen is now part of the standard library. Use 'import \"std\";' and 'std.net.api_listen' or just 'api_listen' after import.");
-                    }
-                } else {
-                    let mut arg_vals = Vec::new();
-                    for arg in args {
-                        let (val, vtype) = self.compile_expr(arg);
-                        if let VarType::Str = vtype {
-                            // Simplify string passing (assume int for now or ptrtoint)
-                            if val.starts_with("@str.") {
-                                let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
-                                let ptr_reg = self.get_reg();
-                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, val));
-                                let int_reg = self.get_reg();
-                                self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, ptr_reg));
-                                arg_vals.push(format!("i64 {}", int_reg));
-                            } else {
-                                let int_reg = self.get_reg();
-                                self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, val));
-                                arg_vals.push(format!("i64 {}", int_reg));
-                            }
-                        } else {
-                            arg_vals.push(format!("i64 {}", val)); 
-                        }
-                    }
-                    let args_str = arg_vals.join(", ");
-                    let reg = self.get_reg();
-                    // User functions use 'fn_' prefix to avoid collision with @main
-                    self.emit(&format!("  {} = call i8* @fn_{}({})\n", reg, name, args_str));
-                    let int_reg = self.get_reg();
-                    self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, reg));
-                    (int_reg, VarType::Int)
                 }
+
+                // Global function dispatch (User functions)
+                let mut arg_vals = Vec::new();
+                for arg in args {
+                    let (val, vtype) = self.compile_expr(arg);
+                    if let VarType::Str = vtype {
+                        if val.starts_with("@str.") {
+                            let str_id_val = val.to_string();
+                            let str_info = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == str_id_val).unwrap();
+                            let str_len = str_info.2;
+                            let ptr_reg = self.get_reg();
+                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, str_id_val));
+                            let int_reg = self.get_reg();
+                            self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, ptr_reg));
+                            arg_vals.push(format!("i64 {}", int_reg));
+                        } else {
+                            let int_reg = self.get_reg();
+                            self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, val));
+                            arg_vals.push(format!("i64 {}", int_reg));
+                        }
+                    } else {
+                        arg_vals.push(format!("i64 {}", val)); 
+                    }
+                }
+                let args_str = arg_vals.join(", ");
+                let reg = self.get_reg();
+                self.emit(&format!("  {} = call i8* @fn_{}({})\n", reg, name, args_str));
+                let int_reg = self.get_reg();
+                self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, reg));
+                (int_reg, VarType::Int)
             }
             Expr::Binary(left, op, right) => {
                 if *op == TokenType::And {
@@ -776,8 +821,16 @@ impl Compiler {
                     return (res_val, VarType::Bool);
                 }
 
-                let (l_val, _) = self.compile_expr(left);
-                let (r_val, _) = self.compile_expr(right);
+                let (l_val, l_vtype) = self.compile_expr(left);
+                let (r_val, r_vtype) = self.compile_expr(right);
+
+                if *op == TokenType::Plus && (l_vtype == VarType::Str || r_vtype == VarType::Str) {
+                    let reg = self.get_reg();
+                    let l_ptr = self.ensure_string(l_val, l_vtype);
+                    let r_ptr = self.ensure_string(r_val, r_vtype);
+                    self.emit(&format!("  {} = call i8* @aura_str_concat(i8* {}, i8* {})\n", reg, l_ptr, r_ptr));
+                    return (reg, VarType::Str);
+                }
 
                 if matches!(op, TokenType::Plus|TokenType::Minus|TokenType::Mul|TokenType::Div) {
                     let reg = self.get_reg();
@@ -803,6 +856,8 @@ impl Compiler {
         }
     }
 
+    /// Injects RAII-style destructor calls and memory deallocation for objects.
+    /// Scans the current scope stack and emits Class_drop and free() calls for all instances.
     fn emit_block_cleanup(&mut self, skip_var: Option<&str>) {
         if let Some(scope) = self.scope_stack.last().cloned() {
             for var_name in scope.iter().rev() {
@@ -831,6 +886,8 @@ impl Compiler {
         }
     }
 
+    /// Compiles a sequence of statements within a new scope block.
+    /// Handles scope push/pop and ensures resources are cleaned up at the end of the block.
     fn compile_block(&mut self, stmts: &[Stmt]) {
         let old_term = self.block_terminated;
         self.block_terminated = false;
@@ -841,6 +898,8 @@ impl Compiler {
         self.block_terminated = old_term; // Restore status (e.g. if the whole block returned)
     }
 
+    /// The core recursive statement compiler.
+    /// Dispatches Aura statements (Vars, Funcs, Classes, Loops, Ifs) to their LLVM IR generators.
     fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::ClassDecl(name, fields, methods) => {
@@ -1054,10 +1113,10 @@ impl Compiler {
                 self.compile_expr(expr);
             }
             Stmt::ImportStmt(module) => {
-                self.std_modules.push(module.clone());
+                self.system_modules.push(module.clone());
             }
             Stmt::Print(expr) => {
-                self.emit_std_io_dispatch("print", &[expr.clone()]);
+                self.emit_system_io_dispatch("print", &[expr.clone()]);
             }
             Stmt::IfStmt(cond, then_block, else_block_opt) => {
                 let (val, vtype) = self.compile_expr(cond);
@@ -1103,6 +1162,11 @@ impl Compiler {
         }
     }
 
+    /// The main entry point for the Aura Compiler.
+    /// Orchestrates the entire compilation process:
+    /// 1. Registers all class structures.
+    /// 2. Compiles global statements.
+    /// 3. Generates the final LLVM module with headers, function bodies, and the main entry point.
     pub fn compile(&mut self, stmts: &[Stmt]) -> String {
         self.output = String::new();
         self.main_body = String::new();
@@ -1157,6 +1221,7 @@ impl Compiler {
                 "aura_read_file" => decls.insert("declare i8* @aura_read_file(i8*)"),
                 "aura_str_replace" => decls.insert("declare i8* @aura_str_replace(i8*, i8*, i8*)"),
                 "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i64)"),
+                "aura_str_concat" => decls.insert("declare i8* @aura_str_concat(i8*, i8*)"),
                 "aura_render_field" => decls.insert("declare i8* @aura_render_field(i8*, i8*, i64)"),
                 "aura_mvc_render_list" => decls.insert("declare i8* @aura_mvc_render_list(i8*, i64*, i32, i8*)"),
                 _ => false, // User function or unknown

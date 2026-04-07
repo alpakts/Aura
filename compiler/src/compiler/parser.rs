@@ -61,7 +61,7 @@ impl Parser {
     }
 
     fn import_file(&self, path: &str) -> Stmt {
-        if path == "std" {
+        if path == "system" {
             return Stmt::ImportStmt(path.to_string());
         }
 
@@ -139,7 +139,7 @@ impl Parser {
                     } else if let Expr::Get(obj, method_name) = expr {
                         // Support obj.method()
                         if let Some(parts) = self.resolve_namespace_chain(&Expr::Get(obj.clone(), method_name.clone())) {
-                             if parts[0] == "std" {
+                             if parts[0] == "system" {
                                  expr = Expr::NamespacedCall(parts, args);
                              } else {
                                  expr = Expr::MethodCall(obj, method_name, args);

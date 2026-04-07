@@ -35,6 +35,18 @@ char* aura_str_find(char* str, const char* pattern) {
     return strstr(str, pattern);
 }
 
+char* aura_str_concat(const char* s1, const char* s2) {
+    if (!s1) s1 = "";
+    if (!s2) s2 = "";
+    size_t l1 = strlen(s1);
+    size_t l2 = strlen(s2);
+    char* res = malloc(l1 + l2 + 1);
+    memcpy(res, s1, l1);
+    memcpy(res + l1, s2, l2);
+    res[l1 + l2] = 0;
+    return res;
+}
+
 long long aura_net_setup(long long port) {
 #ifdef _WIN32
     WSADATA wsa;
