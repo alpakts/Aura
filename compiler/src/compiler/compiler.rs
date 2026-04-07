@@ -609,7 +609,7 @@ impl Compiler {
                             let fields = self.classes.get(&class_name).unwrap().clone();
                             for (i, field_name) in fields.iter().enumerate() {
                                 // Placeholder: {field_name}
-                                let placeholder = format!("{{{}}}", field_name);
+                                let placeholder = format!("{{model.{}}}", field_name);
                                 let p_id = self.str_counter;
                                 self.str_counter += 1;
                                 let p_len = placeholder.len() + 1;

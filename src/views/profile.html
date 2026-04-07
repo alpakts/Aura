@@ -14,9 +14,9 @@
 </head>
 <body>
     <div class="card">
-        <h1>{username}'s Profile</h1>
-        <div class="status">ID: {userId} | Status: {status}</div>
-        <p>Welcome to your personal dashboard. You are rank <b>#{rank}</b> in our system.</p>
+        <h1>{model.username}'s Profile</h1>
+        <div class="status">ID: {model.userId} | Status: {model.status}</div>
+        <p>Welcome to your personal dashboard. You are rank <b>#{model.rank}</b> in our system.</p>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 1.5rem 0;">
         <a href="/getStatus">Check Global System Status</a>
     </div>
