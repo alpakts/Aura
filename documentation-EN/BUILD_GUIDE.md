@@ -1,79 +1,82 @@
-# 🛠️ Build and Installation Guide
+# 🛠️ Aura Build and Installation Guide
 
-This project is a compiler written in **Rust** that outputs **LLVM IR (.ll)** code. To convert this IR code into an executable **Windows EXE**, **Clang** and **Visual Studio Build Tools** are required.
+Aura is a high-performance 64-bit compiler. It translates `.aur` source code into LLVM IR and then links it with a native runtime using Clang.
 
-## 📋 Requirements
+## 📋 System Requirements
 
-1.  **Rust**: To compile the compiler source (`kernel-base`).
-    *   [Install Rust](https://www.rust-lang.org/tools/install)
-2.  **LLVM (Clang)**: To compile the `.ll` file.
-    *   You can install via `winget install LLVM` or use the [LLVM Release Page](https://github.com/llvm/llvm-project/releases).
-    *   Make sure to select **"Add LLVM to the system PATH for all users"** during installation!
-3.  **Visual Studio 2022 (Build Tools)**: Required for the Linker (`link.exe`) and C Runtime (`msvcrt.lib`).
-    *   Install the "Desktop development with C++" workload.
+### Windows
+1.  **Rust**: To build the compiler itself.
+2.  **LLVM (Clang)**: Required for the final native linking stage.
+    *   `winget install LLVM`
+3.  **Visual Studio Build Tools**: Required for the Windows SDK and C Runtime libraries.
+
+### Linux (Ubuntu/Debian)
+1.  **Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+2.  **Clang & Build Essentials**:
+    ```bash
+    sudo apt update
+    sudo apt install clang build-essential
+    ```
+
+### macOS
+1.  **Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+2.  **Xcode Command Line Tools**:
+    ```bash
+    xcode-select --install
+    ```
 
 ---
 
-## 🚀 Building and Running the Project
+## 🚀 Building the Compiler
 
-### Step 1: Open Developer PowerShell (IMPORTANT!) ⚠️
+Navigate to the `compiler` directory and build the host compiler:
 
-If you use standard Windows PowerShell or CMD, you will likely encounter library errors such as `printf` or `msvcrt` not found.
-
-Instead:
-1.  Open the Windows Start menu.
-2.  Search for and run **"Developer PowerShell for VS 2022"** (or 2019).
-3.  Navigate to the project directory:
-    ```powershell
-    cd "Path\To\kernel-base"
-    ```
-
-### Step 2: One-Command Run
-
-Everything is ready! When you run the Rust project, our compiler will automatically read your `.aa` code, convert it to `.ll`, and then use `clang` to produce an `.exe`.
-
-```powershell
-cargo run
+```bash
+cd compiler
+cargo build --release
 ```
 
-This command sequentially performs:
-1.  Compiles the compiler itself (`src/main.rs` -> `kernel-base.exe`).
-2.  Reads the `test.aa` file.
-3.  Generates the `test.ll` file.
-4.  Automatically executes:
-    ```powershell
-    clang test.ll -o test.exe -target i686-pc-windows-msvc -l legacy_stdio_definitions -l msvcrt
-    ```
-5.  If successful, generates `test.exe`.
-
-### Step 3: Test the Program
-
-Run the generated executable:
-
-```powershell
-.\test.exe
-```
+The resulting binary will be in `target/release/aura` (or `aura.exe` on Windows).
 
 ---
 
-## 🔧 Manual Compilation (If Automation Fails)
+## 🏗️ Compiling Aura Programs
 
-If `cargo run` fails but `test.ll` is generated, you can manually build the EXE:
+Aura makes it easy. You just point to your main source file:
 
-**Inside Developer PowerShell:**
-```powershell
-clang test.ll -o test.exe -target i686-pc-windows-msvc -l legacy_stdio_definitions -l msvcrt
+```bash
+# General usage
+aura build path/to/main.aur
+
+# Direct compilation and execution (Development mode)
+cargo run -- ../src/main.aur
 ```
 
-Then run:
-```powershell
-.\test.exe
-```
+### What happens under the hood?
+1.  **Aura Lexer/Parser**: Scans your code and builds an AST.
+2.  **Aura Compiler**: Generates 64-bit **LLVM IR (.ll)**.
+3.  **Native Linker (Clang)**: Automatically detects your OS (Windows, Linux, or macOS), finds the appropriate runtime libraries (WinSock, LibC, etc.), and produces a native executable in the `dist/` folder.
 
-## ❓ Common Errors
+---
 
-*   **`unable to find a Visual Studio installation`**: You are using standard PowerShell. Use Developer PowerShell.
-*   **`unresolved external symbol _printf`**: Ensure you added `-l legacy_stdio_definitions -l msvcrt` to your command.
-*   **`inttoptr` / `getelementptr` errors**: You might have mixed up `print_str` and `print`, or the compiler logic for string literals is outdated. (This has been fixed in the current version).
+## 📂 Project Structure
 
-Happy Coding! 💻
+*   `src/`: Your Aura source code (`.aur` files).
+*   `src/views/`: HTML templates for the MVC engine.
+*   `src/dist/`: Where the final native binaries are stored.
+*   `compiler/src/`: The Rust source code for the Aura compiler.
+*   `compiler/src/compiler/aura_runtime.c`: The core C runtime for Aura.
+*   `compiler/src/compiler/aura_mvc.c`: The MVC and Template engine implementation.
+
+---
+
+## 🔧 Troubleshooting
+
+### "clang not found"
+Ensure LLVM is in your system PATH. On Linux/Mac, this is usually automatic. On Windows, you might need to restart your terminal after installation.
+
+### "Link Error: unresolved external symbol" (Windows)
+Aura tries to find Visual Studio paths via the registry. If it fails, ensure "Desktop development with C++" is installed in the Visual Studio Installer.
+
+### Running on 32-bit Systems
+**Aura is 64-bit native.** It uses `i64` for all integers and pointers. Compiling for 32-bit platforms is currently not supported.

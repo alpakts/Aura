@@ -1,79 +1,82 @@
-# 🛠️ Build ve Kurulum Rehberi
+# 🛠️ Aura Kurulum ve Derleme Kılavuzu
 
-Bu proje, **Rust** ile yazılmış bir derleyicidir ve çıktı olarak **LLVM IR (.ll)** üretir. Bu IR kodunun çalıştırılabilir bir **Windows EXE** dosyasına dönüştürülmesi için **Clang** ve **Visual Studio Build Tools** gereklidir.
+Aura, yüksek performanslı bir 64-bit derleyicidir. `.aur` kaynak kodunu LLVM IR'ye çevirir ve ardından Clang kullanarak yerel bir çalışma zamanı (runtime) ile bağlar.
 
-## 📋 Gereksinimler
+## 📋 Sistem Gereksinimleri
 
-1.  **Rust**: Derleyiciyi (`kernel-base`) derlemek için.
-    *   [Rust İndir](https://www.rust-lang.org/tools/install)
-2.  **LLVM (Clang)**: `.ll` dosyasını derlemek için.
-    *   `winget install LLVM` komutuyla veya [LLVM Release Page](https://github.com/llvm/llvm-project/releases)'den Windows Installer ile kurabilirsiniz.
-    *   Kurulumda **"Add LLVM to the system PATH for all users"** seçeneğini seçmeyi unutmayın!
-3.  **Visual Studio 2022 (Build Tools)**: Linker (`link.exe`) ve C Runtime (`msvcrt.lib`) için.
-    *   "Desktop development with C++" iş yükünü seçerek kurun.
+### Windows
+1.  **Rust**: Derleyicinin kendisini derlemek için gereklidir.
+2.  **LLVM (Clang)**: Son aşamada yerel bağlama (linking) için gereklidir.
+    *   `winget install LLVM`
+3.  **Visual Studio Build Tools**: Windows SDK ve C Çalışma Zamanı (Runtime) kütüphaneleri için gereklidir.
+
+### Linux (Ubuntu/Debian)
+1.  **Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+2.  **Clang & Build Essentials**:
+    ```bash
+    sudo apt update
+    sudo apt install clang build-essential
+    ```
+
+### macOS
+1.  **Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+2.  **Xcode Komut Satırı Araçları**:
+    ```bash
+    xcode-select --install
+    ```
 
 ---
 
-## 🚀 Projeyi Derleme ve Çalıştırma
+## 🚀 Derleyiciyi İnşa Etmek
 
-### Adım 1: Developer PowerShell'i Açın (ÖNEMLİ!) ⚠️
+`compiler` dizinine gidin ve ana derleyiciyi derleyin:
 
-Standart Windows PowerShell veya CMD kullanırsanız, `printf` veya `msvcrt` gibi kütüphane hataları alırsınız.
-
-Bunun yerine:
-1.  Windows Başlat menüsünü açın.
-2.  **"Developer PowerShell for VS 2022"** (veya 2019) aratın ve çalıştırın.
-3.  Proje klasörüne gidin:
-    ```powershell
-    cd "Klasör\Yolunuz\kernel-base"
-    ```
-
-### Adım 2: Tek Komutla Çalıştır
-
-Artık her şey hazır! Rust projesini çalıştırdığınızda, derleyicimiz otomatik olarak `.aa` kodunuzu okur, `.ll`'ye çevirir ve ardından `clang` ile `.exe` üretir.
-
-```powershell
-cargo run
+```bash
+cd compiler
+cargo build --release
 ```
 
-Bu komut sırasıyla şunları yapar:
-1.  Derleyiciyi derler (`src/main.rs` -> `kernel-base.exe`).
-2.  `test.aa` dosyasını okur.
-3.  `test.ll` dosyasını oluşturur.
-4.  Otomatik olarak şu komutu çalıştırır:
-    ```powershell
-    clang test.ll -o test.exe -target i686-pc-windows-msvc -l legacy_stdio_definitions -l msvcrt
-    ```
-5.  Başarılı olursa `test.exe` dosyasını oluşturur.
-
-### Adım 3: Programı Test Et
-
-Oluşan çalıştırılabilir dosyayı çalıştırın:
-
-```powershell
-.\test.exe
-```
+Derlenen dosya `target/release/aura` (Windows'ta `aura.exe`) konumunda oluşacaktır.
 
 ---
 
-## 🔧 Manuel Derleme (Otomasyon Çalışmazsa)
+## 🏗️ Aura Programlarını Derlemek
 
-Eğer `cargo run` hata verirse ancak `test.ll` oluşmuşsa, manuel olarak EXE oluşturabilirsiniz:
+Aura ile derleme yapmak çok kolaydır. Sadece ana kaynak dosyanızı göstermeniz yeterlidir:
 
-**Developer PowerShell içinde:**
-```powershell
-clang test.ll -o test.exe -target i686-pc-windows-msvc -l legacy_stdio_definitions -l msvcrt
+```bash
+# Genel kullanım
+aura build yol/dosya.aur
+
+# Geliştirme modu (Doğrudan derle ve çalıştır)
+cargo run -- ../src/main.aur
 ```
 
-Ardından çalıştırın:
-```powershell
-.\test.exe
-```
+### Arka Planda Neler Oluyor?
+1.  **Aura Lexer/Parser**: Kodunuzu tarar ve bir AST (Soyut Sözdizimi Ağacı) oluşturur.
+2.  **Aura Compiler**: 64-bit **LLVM IR (.ll)** üretir.
+3.  **Yerel Bağlayıcı (Clang)**: İşletim sisteminizi (Windows, Linux veya macOS) otomatik algılar, gerekli sistem kütüphanelerini bulur ve `dist/` klasöründe yerel bir çalıştırılabilir dosya üretir.
 
-## ❓ Sık Karşılaşılan Hatalar
+---
 
-*   **`unable to find a Visual Studio installation`**: Normal PowerShell kullanıyorsunuzdur. Developer PowerShell kullanın.
-*   **`unresolved external symbol _printf`**: Komutunuza `-l legacy_stdio_definitions -l msvcrt` kütüphanelerini eklediğinizden emin olun.
-*   **`inttoptr` / `getelementptr` hataları**: `print_str` ile `print` fonksiyonlarını karıştırdınız veya `compiler.rs` içinde string literal işleme mantığı eski kalmış olabilir. (Bu proje kapsamında düzeltildi).
+## 📂 Proje Yapısı
 
-İyi kodlamalar! 💻
+*   `src/`: Aura kaynak kodlarınız (`.aur` dosyaları).
+*   `src/views/`: MVC motoru için HTML şablonları.
+*   `src/dist/`: Derlenmiş yerel binary dosyaların bulunduğu klasör.
+*   `compiler/src/`: Aura derleyicisinin Rust kaynak kodları.
+*   `compiler/src/compiler/aura_runtime.c`: Aura'nın çekirdek C çalışma zamanı.
+*   `compiler/src/compiler/aura_mvc.c`: MVC ve Şablon motoru uygulaması.
+
+---
+
+## 🔧 Sorun Giderme
+
+### "clang bulunamadı"
+LLVM'in sistem PATH değişkenine eklendiğinden emin olun. Linux/Mac'te bu genellikle otomatiktir. Windows'ta kurulumdan sonra terminali yeniden başlatmanız gerekebilir.
+
+### "Link Error: unresolved external symbol" (Windows)
+Aura, Visual Studio yollarını kayıt defteri (registry) üzerinden bulmaya çalışır. Hata alıyorsanız, Visual Studio Installer üzerinden "C++ ile masaüstü geliştirme" yükünün kurulu olduğundan emin olun.
+
+### 32-bit Sistemlerde Çalıştırma
+**Aura tamamen 64-bit tabanlıdır.** Tüm sayılar ve pointerlar `i64` kullanır. Şu an için 32-bit sistem desteği bulunmamaktadır.

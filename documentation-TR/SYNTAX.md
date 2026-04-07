@@ -1,115 +1,80 @@
-# 📘 .aa Programlama Dili Sözdizimi (Syntax) Kılavuzu
+# 📘 Aura (.aur) Programlama Dili Sözdizimi Kılavuzu
 
-Bu belge, **.aa** programlama dilinin mevcut sürümünde desteklenen kuralları ve kullanımı açıklar.
+Bu belge, **Aura** programlama dilinin mevcut sürümünde desteklenen kuralları ve kullanımı açıklar. Aura, yerel MVC yeteneklerine sahip, yüksek performanslı ve 64-bit derlenen bir dildir.
 
 ## 1. Değişken Tanımlama
-Değişkenler `var` anahtar kelimesi ile tanımlanır. Tür belirtmeye gerek yoktur (Type Inference).
+Değişkenler `var` anahtar kelimesi ile tanımlanır. Aura, ilk atama üzerinden otomatik tip belirleme (Type Inference) yapar.
 
-```aa
+```aura
 var x = 10
-var isim = "Ali"
+var isim = "Alper"
 var aktif = 1
 ```
 
 ## 2. Diziler (Arrays)
-Köşeli parantez `[]` ile dizi tanımlanabilir ve indeks `[i]` ile erişilebilir.
+Diziler, köşeli parantez `[]` ile tanımlanan 64-bit yapılardır.
 
-```aa
+```aura
 var sayilar = [10, 20, 30]
+print(sayilar[0]) // 10 yazdırır
 
-print(sayilar[0]) // 10 yazar
-var x = sayilar[1] + 5
+var kullanicilar = [u1, u2] // Sınıf örneklerinden oluşan dizi
 ```
 
-## 3. Matematiksel İşlemler
-Standart işlemler ve işlem önceliği desteklenir.
+## 3. Nesne Yönelimli Programlama (OOP)
+Aura, sınıfları (class), alanları (field) ve metodları destekler. Tüm nesne örnekleri arka planda 64-bit pointer olarak işlenir.
 
-* `+`, `-`, `*`, `/`
+```aura
+class Kullanici {
+    var id;
+    var isim;
 
-```aa
-var a = (10 + 5) * 2
-```
+    func init(uId, uIsim) {
+        this.id = uId;
+        this.isim = uIsim;
+    }
 
-## 4. Ekrana Yazdırma
-İki farklı yazdırma fonksiyonu bulunur:
-
-* `print(değer)`: Sayıları veya sayısal ifadeleri yazdırır.
-* `print_str(metin)`: Metinleri (String Literal veya String Değişkeni) yazdırır.
-
-```aa
-print(100)               // Sayı basar
-print_str("Merhaba")     // Metin basar
-
-var mesaj = "Selam"
-print_str(mesaj)         // Değişken içeriğini basar
-```
-
-## 5. Koşullu İfadeler (If / Else If / Else)
-Klasik `if` yapısı desteklenir. Zincirleme `else if` yazılabilir.
-
-```aa
-var not = 75
-
-if (not > 90) {
-    print_str("Harika")
-} else if (not > 50) {
-    print_str("Gectiniz")
-} else {
-    print_str("Kaldiniz")
-}
-```
-
-## 6. Döngüler (Loops)
-
-### While Döngüsü
-Koşul doğru olduğu sürece çalışır.
-
-```aa
-var i = 0
-while (i < 5) {
-    print(i)
-    i = i + 1
-}
-```
-
-### For Döngüsü
-C tarzı `for` döngüsü desteklenir: `for (başlangıç; koşul; artış)`.
-
-```aa
-for (var k = 0; k < 10; k = k + 1) {
-    print(k)
-}
-```
-
-## 7. Fonksiyonlar
-Fonksiyonlar `func` ile tanımlanır, parametre alabilir ve `return` ile değer döndürebilir.
-
-```aa
-func topla(x, y) {
-    return x + y
+    func selamVer() {
+        print_str("Merhaba, ben ");
+        print_str(this.isim);
+    }
 }
 
-var sonuc = topla(10, 20)
-print(sonuc) // 30
+var u = new Kullanici();
+u.init(1, "Aura AI");
+u.selamVer();
 ```
 
-### Fonksiyon İpuçları:
-* Fonksiyon içinde tanımlanan değişkenler yereldir (Local Scope).
-* String parametreleri fonksiyonlara iletilebilir (`print_str` ile yazdırılmalıdır).
+## 4. Web & MVC Motoru (Yerleşik)
+Aura, web uygulamaları için yerleşik ve yüksek performanslı bir template motoruna sahiptir.
 
-```aa
-func selamla(isim) {
-    print_str("Merhaba")
-    print_str(isim)
-}
-
-selamla("Ahmet")
+### Dosya Okuma
+```aura
+var tpl = read_file("views/index.html");
 ```
 
-## 8. Yorum Satırları
-Tek satırlık yorumlar `//` ile başlar.
+### Şablon İşleme (Rendering)
+Tek bir nesneyi HTML şablonuna bağlamak için `render` kullanılır. `{model.alan_adi}` etiketlerini otomatik doldurur.
 
-```aa
-// Bu bir yorum satırıdır
-var x = 1 // Yanına da yazılabilir
+```aura
+var html = render(tpl, kullaniciOrnegi);
 ```
+
+### Liste İşleme (AuraView Engine)
+Bir dizi nesneyi (array of objects) rekürsif olarak işlemek için `render_list` kullanılır. Belirli bir etiketi, öğe şablonu (item template) kullanarak doldurur.
+
+```aura
+// render_list(anaSablon, hedefEtiket, veriDizisi, ogeSablonu)
+var listeHtml = render_list(tpl, "{kullanici_listesi}", kullanicilar, ogeTpl);
+```
+
+## 5. Yazdırma Komutları
+* `print(deger)`: Sayıları (i64) yazdırır.
+* `print_str(metin)`: Metinleri veya pointerları yazdırır.
+
+## 6. Kontrol Akışı
+Standart `if`, `else if`, `else`, `while` ve C-stili `for` döngüleri desteklenmektedir.
+
+## 7. Mimari Özellikler
+* **64-Bit:** Tüm tam sayılar ve pointerlar 64-bit (`i64`) genişliğindedir.
+* **Doğrudan Derleme:** Aura kodu önce LLVM IR'ye, ardından Clang aracılığıyla doğrudan makine koduna dönüştürülür.
