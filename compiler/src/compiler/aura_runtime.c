@@ -116,3 +116,16 @@ char* aura_int_to_str(int n) {
     sprintf(s, "%d", n);
     return s;
 }
+
+char* aura_render_field(char* tpl, char* key, long long value) {
+    // Threshold heuristic to distinguish pointer vs small integer
+    // 0x10000 is a safe bet for modern OS minimum memory address
+    if (value > 0x10000 || value < -0x10000) {
+        return aura_str_replace(tpl, key, (char*)value);
+    } else {
+        char* str_val = aura_int_to_str((int)value);
+        char* res = aura_str_replace(tpl, key, str_val);
+        free(str_val);
+        return res;
+    }
+}

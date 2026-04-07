@@ -1,19 +1,24 @@
 class UserController {
     var status;
+    var rank;
+    var userId;
+    var username; // NEW! String support in classes
 
     func init() {
-        this.status = 1; 
+        this.status = 200;
+        this.rank = 99;
     }
 
     func getUser(id) {
         var tpl = read_file("views/profile.html");
-        if (id == 1) {
-            return render(tpl, "{username}", "Alper");
-        }
-        if (id == 2) {
-            return render(tpl, "{username}", "Aura AI");
-        }
-        return render(tpl, "{username}", "Unknown User");
+        this.userId = id;
+        
+        // NO MORE MANUAL RENDER FOR STRINGS!
+        if (id == 1) { this.username = "Alper"; }
+        if (id == 2) { this.username = "Aura AI"; }
+        
+        // This one command handles everything: {username}, {userId}, {status}, {rank}
+        return render(tpl, this);
     }
 
     func getStatus(dummy) {

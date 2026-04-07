@@ -414,9 +414,8 @@ impl Compiler {
             Expr::New(class_name) => {
                 if let Some(fields) = self.classes.get(class_name) {
                     let field_count = fields.len();
-                    // Assuming all fields are i32 (4 bytes). Struct size = 4 * count.
-                    // Note: This is simplified. Real structs need alignment etc.
-                    let size = field_count * 4; 
+                    // Assuming all fields are i64 (8 bytes). Struct size = 8 * count.
+                    let size = field_count * 8; 
                     
                     let malloc_reg = self.get_reg();
                     self.emit(&format!("  {} = call i8* @malloc(i32 {})\n", malloc_reg, size));
@@ -437,13 +436,16 @@ impl Compiler {
                         .expect(&format!("Field '{}' not found in class '{}'", field_name, class_name));
                      
                      let gep_reg = self.get_reg();
-                     // Access field at index
                      self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", 
                          gep_reg, class_name, class_name, obj_reg, index));
                      
                      let val_reg = self.get_reg();
-                     self.emit(&format!("  {} = load i32, i32* {}\n", val_reg, gep_reg));
-                     (val_reg, VarType::Int) // Assuming fields are all Int
+                     self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, gep_reg));
+                     
+                     // Truncate to i32 for internal Aura logic (math etc)
+                     let trunc_reg = self.get_reg();
+                     self.emit(&format!("  {} = trunc i64 {} to i32\n", trunc_reg, val_reg));
+                     (trunc_reg, VarType::Int) 
                 } else { panic!("Property access on non-object"); }
             }
             Expr::Set(obj_expr, field_name, val_expr) => {
@@ -453,14 +455,23 @@ impl Compiler {
                      let index = fields.iter().position(|r| r == field_name)
                         .expect(&format!("Field '{}' not found in class '{}'", field_name, class_name));
                      
-                     let (val_reg, _) = self.compile_expr(val_expr);
-                     
+                     let (val_val, val_type) = self.compile_expr(val_expr);
+                     let final_val = if val_type == VarType::Int {
+                         let ext_reg = self.get_reg();
+                         self.emit(&format!("  {} = sext i32 {} to i64\n", ext_reg, val_val));
+                         ext_reg
+                     } else if val_type == VarType::Str {
+                         let ptr_reg = self.get_reg();
+                         self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", ptr_reg, val_val));
+                         ptr_reg
+                     } else { val_val.clone() };
+
                      let gep_reg = self.get_reg();
                      self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", 
                          gep_reg, class_name, class_name, obj_reg, index));
                      
-                     self.emit(&format!("  store i32 {}, i32* {}\n", val_reg, gep_reg));
-                     (val_reg, VarType::Int)
+                     self.emit(&format!("  store i64 {}, i64* {}\n", final_val, gep_reg));
+                     (val_val.clone(), VarType::Int)
                 } else { panic!("Property set on non-object"); }
             }
             Expr::IndexAccess(name, index_expr) => {
@@ -587,19 +598,60 @@ impl Compiler {
                     self.emit(&format!("  {} = call i8* @aura_read_file(i8* {})\n", reg, final_ptr));
                     (reg, VarType::Str)
                 } else if name == "render" {
-                    let (tpl_val, _) = self.compile_expr(&args[0]);
-                    let (key_val, _) = self.compile_expr(&args[1]);
-                    let (val_val, val_type) = self.compile_expr(&args[2]);
-                    
-                    let final_val = if val_type == VarType::Int {
-                        let s_reg = self.get_reg();
-                        self.emit(&format!("  {} = call i8* @aura_int_to_str(i32 {})\n", s_reg, val_val));
-                        s_reg
-                    } else { val_val };
+                    if args.len() == 2 {
+                        let (tpl_val, _) = self.compile_expr(&args[0]);
+                        let (obj_val, obj_type) = self.compile_expr(&args[1]);
+                        
+                        // Ensure tpl_val is a pointer if it's a static string
+                        let mut current_tpl = if tpl_val.starts_with("@str.") {
+                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == tpl_val).unwrap().2;
+                             let p_reg = self.get_reg();
+                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", p_reg, str_len, str_len, tpl_val));
+                             p_reg
+                        } else { tpl_val };
 
-                    let res_reg = self.get_reg();
-                    self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
-                    (res_reg, VarType::Str)
+                        if let VarType::Instance(class_name) = obj_type {
+                            let fields = self.classes.get(&class_name).unwrap().clone();
+                            for (i, field_name) in fields.iter().enumerate() {
+                                // Placeholder: {field_name}
+                                let placeholder = format!("{{{}}}", field_name);
+                                let p_id = self.str_counter;
+                                self.str_counter += 1;
+                                let p_len = placeholder.len() + 1;
+                                self.string_literals.push((p_id, placeholder, p_len));
+                                let p_ptr = self.get_reg();
+                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* @str.{}, i32 0, i32 0\n", p_ptr, p_len, p_len, p_id));
+
+                                // Load field from object
+                                let ptr_reg = self.get_reg();
+                                self.emit(&format!("  {} = getelementptr inbounds %struct.{}, %struct.{}* {}, i32 0, i32 {}\n", ptr_reg, class_name, class_name, obj_val, i));
+                                let val_reg = self.get_reg();
+                                self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
+
+                                // Render using "Any" helper
+                                let next_tpl = self.get_reg();
+                                self.emit(&format!("  {} = call i8* @aura_render_field(i8* {}, i8* {}, i64 {})\n", next_tpl, current_tpl, p_ptr, val_reg));
+                                current_tpl = next_tpl;
+                            }
+                            (current_tpl, VarType::Str)
+                        } else {
+                            panic!("render(tpl, obj) expects a class instance as second argument.");
+                        }
+                    } else {
+                        let (tpl_val, _) = self.compile_expr(&args[0]);
+                        let (key_val, _) = self.compile_expr(&args[1]);
+                        let (val_val, val_type) = self.compile_expr(&args[2]);
+                        
+                        let final_val = if val_type == VarType::Int {
+                            let s_reg = self.get_reg();
+                            self.emit(&format!("  {} = call i8* @aura_int_to_str(i32 {})\n", s_reg, val_val));
+                            s_reg
+                        } else { val_val };
+
+                        let res_reg = self.get_reg();
+                        self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
+                        (res_reg, VarType::Str)
+                    }
                 } else if name == "api_listen" {
                     // Check if std.net is imported
                     if self.std_modules.contains(&"std.net".to_string()) || self.std_modules.contains(&"std".to_string()) {
@@ -1026,10 +1078,10 @@ impl Compiler {
         
         let mut header = String::from("; Module: aura_lang\n");
         // Generate Struct Definitions
-        for (name, fields) in &self.classes {
-             let types_str = fields.iter().map(|_| "i32").collect::<Vec<_>>().join(", ");
-             header.push_str(&format!("%struct.{} = type {{ {} }}\n", name, types_str));
-        }
+         for (name, fields) in &self.classes {
+              let types_str = fields.iter().map(|_| "i64").collect::<Vec<_>>().join(", ");
+              header.push_str(&format!("%struct.{} = type {{ {} }}\n", name, types_str));
+         }
 
         // --- LAZY IR EMISSION (Required Symbols ONLY) ---
         let mut decls = HashSet::new();
@@ -1061,6 +1113,7 @@ impl Compiler {
                 "aura_read_file" => decls.insert("declare i8* @aura_read_file(i8*)"),
                 "aura_str_replace" => decls.insert("declare i8* @aura_str_replace(i8*, i8*, i8*)"),
                 "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i32)"),
+                "aura_render_field" => decls.insert("declare i8* @aura_render_field(i8*, i8*, i64)"),
                 _ => false, // User function or unknown
             };
         }
