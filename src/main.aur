@@ -1,42 +1,58 @@
 import "lib.aur";
+import "std";
 
-print_str("--- Aura Language Comprehensive Demo ---");
+print_str("--- Aura Ultimate Experience Demo ---");
 
-// 1. External Function Call (from lib.aur)
-greet();
+// 1. Console Input & Boolean Logic
+print_str("Enter your name:");
+var name = input_str();
+print_str("Welcome:");
+print_str(name);
 
-// 2. Class Instance & Method Calls
-var calc = new Math();
-calc.setVal(42);
-var v = calc.getVal();
-print_str("Stored value in class:");
-print(v);
+print_str("What is your age?");
+var age = input();
 
-var result = calc.add(10, 5);
-print_str("10 + 5 =");
-print(result);
-
-// 3. Arrays and Loops
-var myArr = [100, 200, 300];
-print_str("Looping through array:");
-for (var i = 0; i < 3; i = i + 1) {
-    print(myArr[i]);
-}
-
-// 4. Conditional Logic
-var x = 10;
-if (x > 5) {
-    print_str("x is greater than 5");
+var isAdult = age >= 18;
+if (isAdult) {
+    print_str("You are an adult Aura user!");
 } else {
-    print_str("x is NOT greater than 5");
+    print_str("You are a young Aura user!");
 }
 
-// 5. While Loop
-var count = 0;
-print_str("While loop countdown:");
-while (count < 3) {
-    print(count);
-    count = count + 1;
+// 2. Arrays & For Loops
+var powers = [1, 2, 4, 8, 16];
+print_str("First 5 powers of 2:");
+for (var i = 0; i < 5; i = i + 1) {
+    print(powers[i]);
 }
 
-print_str("Demo execution finished successfully!");
+// 3. While Loops & Nested Logic
+var countdown = 3;
+print_str("Countdown starting...");
+while (countdown > 0) {
+    print(countdown);
+    countdown = countdown - 1;
+}
+print_str("Liftoff!");
+
+// 4. Math Class Demo
+print_str("Testing Math Class:");
+var m = new Math();
+print_str("3 + 7 =");
+print(m.add(3, 7));
+print_str("10 - 4 =");
+print(m.sub(10, 4));
+print_str("5 * 5 =");
+print(m.mul(5, 5));
+print_str("20 / 4 =");
+print(m.div(20, 4));
+print_str("2^3 =");
+print(m.pow(2, 3));
+
+// 5. API & MVC Integration
+print_str("Launching API Server...");
+var api = new UserController();
+api.init();
+
+print_str("Try: http://localhost:8080/getUser?id=1");
+api_listen(8080, api);

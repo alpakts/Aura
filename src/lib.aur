@@ -1,19 +1,48 @@
-class Math {
-    var value;
+class UserController {
+    var status;
 
-    func add(a, b) {
-        return a + b;
-    }
-    
-    func setVal(v) {
-        this.value = v;
+    func init() {
+        this.status = 1; 
     }
 
-    func getVal() {
-        return this.value;
+    func getUser(id) {
+        var names = ["Guest", "Alper", "Aura"];
+        if (id < 3) {
+            return names[id];
+        }
+        return "User Not Found";
+    }
+
+    func getStatus(dummy) {
+        if (this.status == 1) {
+            return "System Status: Active";
+        }
+        return "System Status: Offline";
     }
 }
 
-func greet() {
-    print_str("Hello from Aura Library!");
+class Math {
+    func add(a, b) { return a + b; }
+    func sub(a, b) { return a - b; }
+    func mul(a, b) { return a * b; }
+    func div(a, b) { 
+        if (b == 0) {
+            print_str("Error: Division by zero");
+            return 0;
+        }
+        return a / b; 
+    }
+
+    func pow(base, exp) {
+        var res = 1;
+        for (var i = 0; i < exp; i = i + 1) {
+            res = res * base;
+        }
+        return res;
+    }
+
+    func abs(n) {
+        if (n < 0) { return 0 - n; }
+        return n;
+    }
 }
