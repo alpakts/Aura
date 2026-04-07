@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura User Directory</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: white; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #38bdf8; font-size: 2.5rem; border-bottom: 2px solid #1e293b; padding-bottom: 1rem; }
+        .user-grid { display: grid; gap: 1rem; margin-top: 2rem; }
+        .user-card { background: #1e293b; padding: 1.5rem; border-radius: 12px; border: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; transition: transform 0.2s; }
+        .user-card:hover { transform: translateY(-3px); border-color: #38bdf8; }
+        .user-info h3 { margin: 0; color: #f8fafc; }
+        .user-info span { color: #94a3b8; font-size: 0.9rem; }
+        .badge { background: #0ea5e9; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Aura Universe Members</h1>
+        <p>Found 10 active users in the system.</p>
+        <div class="user-grid">
+            {users_list}
+        </div>
+        <br>
+        <a href="/getStatus" style="color: #38bdf8; text-decoration: none;">&larr; System Status</a>
+    </div>
+</body>
+</html>

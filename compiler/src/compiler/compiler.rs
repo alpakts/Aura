@@ -153,7 +153,7 @@ impl Compiler {
                 let (obj_val, obj_type) = self.compile_expr(&args[1]);
                 
                 if let VarType::Instance(class_name) = obj_type {
-                    // 1. Soket Kurulumu
+                    // 1. Socket Setup
                     let sock = self.get_reg();
                     self.emit(&format!("  {} = call i64 @aura_net_setup(i64 {})\n", sock, port_val));
 
@@ -215,9 +215,9 @@ impl Compiler {
     }
 
     fn emit_api_runtime(&mut self, port: String, obj_val: String, class_name: String) -> (String, VarType) {
-        // --- Socket Baslat ---
+        // --- Initialize Socket ---
         if self.target_os == TargetOs::Windows {
-            // WinSock Baslat
+            // Initialize WinSock
             let wsa_data = self.get_reg();
             self.emit(&format!("  {} = alloca [512 x i8]\n", wsa_data)); 
             let wsa_ptr = self.get_reg();
@@ -259,14 +259,14 @@ impl Compiler {
         let client_sock = self.get_reg();
         self.emit(&format!("  {} = call i64 @accept(i64 {}, i8* null, i64* null)\n", client_sock, sock));
         
-        // Request Oku
+        // Read Request
         let buf = self.get_reg();
         self.emit(&format!("  {} = alloca [1024 x i8]\n", buf));
         let buf_ptr = self.get_reg();
         self.emit(&format!("  {} = getelementptr inbounds [1024 x i8], [1024 x i8]* {}, i64 0, i64 0\n", buf_ptr, buf));
         self.emit(&format!("  call i64 @recv(i64 {}, i8* {}, i64 1024, i64 0)\n", client_sock, buf_ptr));
 
-        // JSON Header Gonder
+        // Send JSON Header
         let h1 = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
         let h1_val = self.add_string(h1.to_string());
         let h1_ptr = self.get_reg();
@@ -291,8 +291,8 @@ impl Compiler {
                 self.emit(&format!("  br i1 {}, label %{}, label %{}\n", is_match, l_then, l_next));
                 
                 self.emit(&format!("{}:\n", l_then));
-                // --- Parametre Ayirma Logic ---
-                // Buffer'da '?' ara
+                // --- Parameter Parsing Logic ---
+                // Search for '?' in buffer
                 let q_mark = self.add_string("?".to_string());
                 let q_ptr = self.get_reg();
                 self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i64 0, i64 0))\n", q_ptr, buf_ptr, q_mark));
@@ -308,7 +308,7 @@ impl Compiler {
                 self.emit(&format!("  br i1 {}, label %{}, label %{}\n", has_q, l_q_then, l_q_next));
                 
                 self.emit(&format!("{}:\n", l_q_then));
-                // '=' ara
+                // Search for '='
                 let eq_mark = self.add_string("=".to_string());
                 let eq_ptr = self.get_reg();
                 self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i64 0, i64 0))\n", eq_ptr, q_ptr, eq_mark));
@@ -330,11 +330,11 @@ impl Compiler {
                 let final_arg = self.get_reg();
                 self.emit(&format!("  {} = load i64, i64* {}\n", final_arg, param_val_final));
 
-                // Metodu cagir: Class_Method(this, param)
+                // Call method: Class_Method(this, param)
                 let res_ptr = self.get_reg();
                 self.emit(&format!("  {} = call i8* @{}_{}(%struct.{}* {}, i64 {})\n", res_ptr, class_name, m, class_name, obj_val, final_arg));
                 
-                // Uzunlugu olc (strlen)
+                // Measure length (strlen)
                 let res_len = self.get_reg();
                 self.emit(&format!("  {} = call i64 @strlen(i8* {})\n", res_len, res_ptr));
                 
@@ -399,14 +399,18 @@ impl Compiler {
                 let vtype_opt = self.var_types.get(name).cloned();
                 if let Some(vtype) = vtype_opt {
                     let reg = self.get_reg();
-                    match &vtype { 
-                        VarType::Int => { self.emit(&format!("  {} = load i64, i64* %{}_ptr\n", reg, name)); }, 
-                        VarType::Str => { self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name)); },
-                        VarType::Bool => { self.emit(&format!("  {} = load i1, i1* %{}_ptr\n", reg, name)); },
-                        VarType::Instance(cls) => { self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name)); },
-                        VarType::Array(_, _) => panic!("Arrays can only be accessed via index: {}[0]", name),
-                    }
-                    (reg, vtype)
+                    let result = match &vtype { 
+                        VarType::Int => { self.emit(&format!("  {} = load i64, i64* %{}_ptr\n", reg, name)); (reg, vtype.clone()) }, 
+                        VarType::Str => { self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name)); (reg, vtype.clone()) },
+                        VarType::Bool => { self.emit(&format!("  {} = load i1, i1* %{}_ptr\n", reg, name)); (reg, vtype.clone()) },
+                        VarType::Instance(cls) => { self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name)); (reg, vtype.clone()) },
+                        VarType::Array(elem, len) => {
+                            let p_reg = self.get_reg();
+                            self.emit(&format!("  {} = bitcast [{} x i64]* %{}_ptr to i64*\n", p_reg, len, name));
+                            (p_reg, VarType::Array(elem.clone(), *len))
+                        }
+                    };
+                    result
                 } else {
                     panic!("Undefined variable: {}", name);
                 }
@@ -632,7 +636,7 @@ impl Compiler {
                         } else {
                             panic!("render(tpl, obj) expects a class instance as second argument.");
                         }
-                    } else {
+                    } else if args.len() == 3 {
                         let (tpl_val, _) = self.compile_expr(&args[0]);
                         let (key_val, _) = self.compile_expr(&args[1]);
                         let (val_val, val_type) = self.compile_expr(&args[2]);
@@ -646,6 +650,43 @@ impl Compiler {
                         let res_reg = self.get_reg();
                         self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
                         (res_reg, VarType::Str)
+                    } else {
+                        panic!("render() takes 2 or 3 arguments.");
+                    }
+                } else if name == "render_list" {
+                    if args.len() == 4 {
+                        // render_list(tpl, tag, array, itemTpl)
+                        let (tpl_val, _) = self.compile_expr(&args[0]);
+                        let (tag_val, _) = self.compile_expr(&args[1]);
+                        let (arr_val, arr_type) = self.compile_expr(&args[2]);
+                        let (item_tpl_val, _) = self.compile_expr(&args[3]);
+
+                        if let VarType::Array(elem_type, len) = arr_type {
+                            if let VarType::Instance(class_name) = *elem_type {
+                                let field_names = self.classes.get(&class_name).unwrap().join(",");
+                                let f_id = self.add_string(field_names.clone());
+                                let f_ptr = self.get_reg();
+                                let f_len = field_names.len() + 1;
+                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", f_ptr, f_len, f_len, f_id));
+
+                                let arr_ptr = self.get_reg();
+                                self.emit(&format!("  {} = bitcast [{} x i64]* %{}_ptr to i64*\n", arr_ptr, len, match &args[2] { 
+                                    Expr::Variable(n) => n,
+                                    _ => panic!("render_list expects an array variable.")
+                                }));
+
+                                let list_html = self.get_reg();
+                                self.emit(&format!("  {} = call i8* @aura_mvc_render_list(i8* {}, i64* {}, i32 {}, i8* {})\n", 
+                                    list_html, item_tpl_val, arr_ptr, len, f_ptr));
+
+                                let res_reg = self.get_reg();
+                                self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", 
+                                    res_reg, tpl_val, tag_val, list_html));
+                                (res_reg, VarType::Str)
+                            } else { panic!("render_list requires an array of class instances."); }
+                        } else { panic!("render_list requires an array variable."); }
+                    } else {
+                        panic!("render_list(tpl, tag, array, itemTpl) requires exactly 4 arguments.");
                     }
                 } else if name == "api_listen" {
                     // Check if std.net is imported
@@ -951,7 +992,6 @@ impl Compiler {
                         self.emit(&format!("  {} = getelementptr inbounds [{} x {}], [{} x {}]* %{}_ptr, i64 0, i64 {}\n", 
                             ptr_reg, len, llvm_type, len, llvm_type, name, i));
                         
-                        // String ise literal PTR'sini almamiz gerekebilir (print_str logic gibi)
                         let store_val = if elem_vtype == VarType::Str && val.starts_with("@str.") {
                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                             let reg = self.get_reg();
@@ -959,8 +999,17 @@ impl Compiler {
                             reg
                         } else { val };
 
-                        self.emit(&format!("  store {} {}, {}* {}\n", llvm_type, store_val, llvm_type, ptr_reg));
+                        let final_store_val = if let VarType::Instance(cls) = &elem_vtype {
+                            let int_reg = self.get_reg();
+                            self.emit(&format!("  {} = ptrtoint %struct.{}* {} to i64\n", int_reg, cls, store_val));
+                            int_reg
+                        } else {
+                            store_val
+                        };
+
+                        self.emit(&format!("  store {} {}, {}* {}\n", llvm_type, final_store_val, llvm_type, ptr_reg));
                     }
+
                 } else {
                     let (val, vtype) = self.compile_expr(expr);
                     match &vtype {
@@ -1109,6 +1158,7 @@ impl Compiler {
                 "aura_str_replace" => decls.insert("declare i8* @aura_str_replace(i8*, i8*, i8*)"),
                 "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i64)"),
                 "aura_render_field" => decls.insert("declare i8* @aura_render_field(i8*, i8*, i64)"),
+                "aura_mvc_render_list" => decls.insert("declare i8* @aura_mvc_render_list(i8*, i64*, i32, i8*)"),
                 _ => false, // User function or unknown
             };
         }

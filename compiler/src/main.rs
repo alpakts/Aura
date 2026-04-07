@@ -6,11 +6,11 @@ use compiler::lexer::Lexer;
 use compiler::parser::Parser;
 use compiler::compiler::Compiler;
 
-/// Visual Studio yollarını otomatik bulmak için yardımcı fonksiyon
+/// Helper function to automatically find Visual Studio paths
 fn find_msvc_paths() -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
     println!("🔍 Searching for Visual Studio & Windows SDK libraries...");
     
-    // Windows Registry üzerinden kütüphane yollarını tara
+    // Scan library paths over Windows Registry
     #[cfg(windows)]
     {
         use cc::windows_registry;
@@ -36,7 +36,7 @@ fn find_msvc_paths() -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
         }
     }
     
-    // OFFLINE FALLBACK: Kendi 'lib' klasörümüze bak (Aura-SDK/lib)
+    // OFFLINE FALLBACK: Look into our own 'lib' folder (Aura-SDK/lib)
     if let Ok(exe_p) = std::env::current_exe() {
         if let Some(parent) = exe_p.parent() {
             let local_lib = parent.parent().unwrap_or(parent).join("lib");
@@ -52,7 +52,7 @@ fn find_msvc_paths() -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
 }
 
 fn main() {
-    // 1. Dosya Yolunu Al
+    // 1. Get file path
     let args: Vec<String> = std::env::args().collect();
     
     if args.len() < 2 {
@@ -66,7 +66,7 @@ fn main() {
 
     let mut arg_path = &args[1];
     
-    // Alt komut kontrolü (Subcommands)
+    // Subcommands
     if arg_path == "build" {
         if args.len() > 2 {
              arg_path = &args[2];
@@ -96,7 +96,7 @@ fn main() {
     let src = fs::read_to_string(&input_file).unwrap();
     let file_stem = input_file.file_stem().unwrap().to_str().unwrap();
 
-    // -- Derleme Aşamaları --
+    // -- Compilation Stages --
     let mut lexer = Lexer::new(src);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens, source_dir.to_path_buf());
@@ -108,46 +108,57 @@ fn main() {
     fs::write(&ll_path, ir).unwrap();
     println!("✅ LLVM IR Generated: {:?}", ll_path);
 
-    // 5. Clang ile EXE Oluşturma (AKILLI MOD)
+    // 5. Generate Executable with Clang (SMART MODE)
     println!("🔨 Linking to Native Executable...");
-    let exe_path = dist_dir.join(format!("{}.exe", file_stem));
+    let extension = if cfg!(windows) { ".exe" } else { "" };
+    let exe_path = dist_dir.join(format!("{}{}", file_stem, extension));
     
     let mut clang_cmd = std::process::Command::new("clang");
     clang_cmd
         .arg(&ll_path)
         .arg("-o")
         .arg(&exe_path)
-        .arg("-target")
-        .arg("x86_64-pc-windows-msvc")
-        .arg("-fuse-ld=lld")
         .arg("-Wno-override-module");
+
+    if cfg!(windows) {
+        clang_cmd.arg("-target").arg("x86_64-pc-windows-msvc");
+        clang_cmd.arg("-fuse-ld=lld");
+    }
       
 
-    // EĞER KÜTÜPHANELER BULUNDUYSA LİNKERE EKLE
-    if let Some((lib_paths, include_paths)) = find_msvc_paths() {
-        for p in lib_paths {
-            let mut arg_val = String::from("-L");
-            arg_val.push_str(p.to_str().unwrap_or(""));
-            clang_cmd.arg(arg_val);
+    // LINK SYSTEM LIBRARIES
+    if cfg!(windows) {
+        if let Some((lib_paths, include_paths)) = find_msvc_paths() {
+            for p in lib_paths {
+                let mut arg_val = String::from("-L");
+                arg_val.push_str(p.to_str().unwrap_or(""));
+                clang_cmd.arg(arg_val);
+            }
+            for p in include_paths {
+                let mut arg_val = String::from("-I");
+                arg_val.push_str(p.to_str().unwrap_or(""));
+                clang_cmd.arg(arg_val);
+            }
+            // Link base libraries for MSVC
+            clang_cmd.arg("-lmsvcrt");
+            clang_cmd.arg("-lucrt");
+            clang_cmd.arg("-lvcruntime");
+            clang_cmd.arg("-llegacy_stdio_definitions");
+            clang_cmd.arg("-lkernel32");
+            clang_cmd.arg("-luser32");
+            clang_cmd.arg("-lws2_32"); // Network support
+        } else {
+            // Fallback: Might already be in terminal paths
+            clang_cmd.arg("-lmsvcrt");
+            clang_cmd.arg("-llegacy_stdio_definitions");
+            clang_cmd.arg("-lws2_32");
         }
-        for p in include_paths {
-            let mut arg_val = String::from("-I");
-            arg_val.push_str(p.to_str().unwrap_or(""));
-            clang_cmd.arg(arg_val);
-        }
-        // Temel kütüphaneleri bağla (Modern MSVC ve Ağ desteği için tam liste)
-        clang_cmd.arg("-lmsvcrt");
-        clang_cmd.arg("-lucrt");
-        clang_cmd.arg("-lvcruntime");
-        clang_cmd.arg("-llegacy_stdio_definitions");
-        clang_cmd.arg("-lkernel32");
-        clang_cmd.arg("-luser32");
-        clang_cmd.arg("-lws2_32"); // Ağ desteği için eklendi!
     } else {
-        // Fallback: Belki terminalde zaten vardır
-        clang_cmd.arg("-lmsvcrt");
-        clang_cmd.arg("-llegacy_stdio_definitions");
-        clang_cmd.arg("-lws2_32");
+        // Linux/macOS: Standard libraries
+        clang_cmd.arg("-lc").arg("-lm");
+        if !cfg!(target_os = "macos") {
+            clang_cmd.arg("-lpthread").arg("-ldl");
+        }
     }
 
     // --- AURA RUNTIME INTEGRATION ---

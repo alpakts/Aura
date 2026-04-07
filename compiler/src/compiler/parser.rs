@@ -89,7 +89,7 @@ impl Parser {
             TokenType::Id(n) => { self.advance(); Expr::Variable(n) },
             TokenType::Not => { self.advance(); Expr::Unary(TokenType::Not, Box::new(self.parse_primary())) },
             TokenType::New => {
-                 self.advance(); // new
+                 self.advance();
                  if let TokenType::Id(class_name) = self.advance().kind {
                      self.consume(TokenType::LParen, "Expected '('");
                      self.consume(TokenType::RParen, "Expected ')'");
@@ -97,20 +97,20 @@ impl Parser {
                  } else { panic!("Expected class name after 'new'"); }
             },
             TokenType::LBracket => { // Array Literal [1, 2, 3]
-                self.advance(); // [
+                self.advance();
                 let mut elements = Vec::new();
                 if self.peek().kind != TokenType::RBracket {
                     elements.push(self.parse_expr());
                     while self.peek().kind == TokenType::Comma {
-                        self.advance(); // ,
+                        self.advance();
                         elements.push(self.parse_expr());
                     }
                 }
-                self.consume(TokenType::RBracket, "Expected ']'"); // ]
+                self.consume(TokenType::RBracket, "Expected ']'");
                 Expr::ArrayLiteral(elements)
             },
             TokenType::LParen => {
-                self.advance(); // (
+                self.advance();
                 let e = self.parse_expr(); 
                 self.consume(TokenType::RParen, "Missing ')'"); 
                 e 
@@ -266,7 +266,7 @@ impl Parser {
         let t = self.peek().clone();
         match t.kind {
             TokenType::Class => {
-                self.advance(); // class
+                self.advance();
                 let name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Expected class name") };
                 self.consume(TokenType::LBrace, "Expected '{'");
                 let mut fields = Vec::new();
@@ -281,7 +281,7 @@ impl Parser {
                             } else { panic!("Expected field name"); }
                         },
                         TokenType::Func => {
-                             self.advance(); // func
+                             self.advance();
                              let func_name = if let TokenType::Id(n) = self.advance().kind { n } else { panic!("Function name missing") };
                              self.consume(TokenType::LParen, "Expected '('");
                              let mut args = Vec::new();
@@ -303,7 +303,7 @@ impl Parser {
                 Stmt::ClassDecl(name, fields, methods)
             }
             TokenType::Import => { 
-                self.advance(); // consume 'import'
+                self.advance();
                 
                 match &self.peek().kind {
                     TokenType::String(path) => {
@@ -315,7 +315,7 @@ impl Parser {
                     },
                     TokenType::LBrace => {
                         // import { A, B } from "file.aur";
-                        self.advance(); // {
+                        self.advance();
                         let mut _names = Vec::new();
                         if let TokenType::Id(name) = self.advance().kind { _names.push(name); }
                         while self.peek().kind == TokenType::Comma {
@@ -410,7 +410,7 @@ impl Parser {
             }
             TokenType::For => {
                  // ... (Keep existing For logic)
-                self.advance(); // for
+                self.advance();
                 self.consume(TokenType::LParen, "Expected '('");
                 let mut init_stmts = Vec::new();
                 if self.peek().kind != TokenType::Semicolon {
@@ -444,7 +444,7 @@ impl Parser {
                 
                 if self.peek().kind == TokenType::Assign {
                      // Assignment: l-value = r-value
-                     self.advance(); // =
+                     self.advance();
                      let r_val = self.parse_expr();
                      self.consume(TokenType::Semicolon, "Expected ';'");
                      

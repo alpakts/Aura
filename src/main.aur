@@ -55,4 +55,5 @@ var api = new UserController();
 api.init();
 
 print_str("Try: http://localhost:8080/getUser?id=1");
+print_str("Try: http://localhost:8080/getUsers");
 api_listen(8080, api);
