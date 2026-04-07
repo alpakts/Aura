@@ -56,7 +56,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     
     if args.len() < 2 {
-        println!("🚀 Aura Programming Language v0.1.0");
+        println!(" Aura Programming Language v0.1.0");
         println!("Usage:");
         println!("  aura build <file.aur>   - Compile to EXE");
         println!("  aura <file.aur>         - Compile to EXE (Direct)");
@@ -71,7 +71,7 @@ fn main() {
         if args.len() > 2 {
              arg_path = &args[2];
         } else {
-             println!("❌ Error: Please provide a file to build.");
+             println!(" Error: Please provide a file to build.");
              return;
         }
     } else if arg_path == "version" {
@@ -81,10 +81,10 @@ fn main() {
 
     let path = Path::new(arg_path);
     let abs_path = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap().join(path) };
-    let abs_path = match fs::canonicalize(&abs_path) { Ok(p) => p, Err(_) => { println!("❌ Error: Path {:?} not found.", abs_path); return; } };
+    let abs_path = match fs::canonicalize(&abs_path) { Ok(p) => p, Err(_) => { println!(" Error: Path {:?} not found.", abs_path); return; } };
 
     let input_file = if abs_path.is_dir() { abs_path.join("main.aur") } else { abs_path.clone() };
-    if !input_file.exists() { println!("❌ Error: Input file {:?} not found.", input_file); return; }
+    if !input_file.exists() { println!(" Error: Input file {:?} not found.", input_file); return; }
 
     let source_dir = input_file.parent().unwrap();
     let dist_dir = source_dir.join("dist");
@@ -92,7 +92,7 @@ fn main() {
 
     if let Err(e) = std::env::set_current_dir(source_dir) { println!("⚠️ Warning: Cwd error: {}", e); }
     
-    println!("🚀 Compiling: {:?}", input_file);
+    println!(" Compiling: {:?}", input_file);
     let src = fs::read_to_string(&input_file).unwrap();
     let file_stem = input_file.file_stem().unwrap().to_str().unwrap();
 
@@ -153,18 +153,25 @@ fn main() {
     // --- AURA RUNTIME INTEGRATION ---
     // Try to find aura_runtime.c in the project source or relative to exe
     if let Ok(exe_p) = std::env::current_exe() {
-        if let Some(p) = exe_p.parent() {
+        let p = exe_p.parent().unwrap_or(&exe_p);
+        let proj_root = p.parent().unwrap_or(p).parent().unwrap_or(p);
+
+        if let Some(_) = exe_p.parent() {
             // Development: compiler/target/debug/aura.exe -> proj_root is compiler/
-            let proj_root = p.parent().unwrap_or(p).parent().unwrap_or(p);
             let runtime_file = proj_root.join("src").join("compiler").join("aura_runtime.c");
             if runtime_file.exists() {
                 clang_cmd.arg(runtime_file);
-            } else {
-                // Try nearby (for standalone release)
-                let alt_runtime = p.join("aura_runtime.c");
-                if alt_runtime.exists() {
-                    clang_cmd.arg(alt_runtime);
-                }
+            }
+
+            let mvc_file = proj_root.join("src").join("compiler").join("aura_mvc.c");
+            if mvc_file.exists() {
+                clang_cmd.arg(mvc_file);
+            }
+        } else {
+            // Try nearby (for standalone release)
+            let alt_runtime = proj_root.join("aura_runtime.c");
+            if alt_runtime.exists() {
+                clang_cmd.arg(alt_runtime);
             }
         }
     }
@@ -172,13 +179,13 @@ fn main() {
     match clang_cmd.output() {
         Ok(output) => {
             if output.status.success() {
-                println!("🎉 Success: Compiled to {:?}", exe_path);
-                println!("🚀 Running: \n----------------------------------");
+                println!(" Success: Compiled to {:?}", exe_path);
+                println!(" Running: \n----------------------------------");
                 let _ = std::process::Command::new(&exe_path).status();
             } else {
-                println!("❌ Link Error:\n{}", String::from_utf8_lossy(&output.stderr));
+                println!(" Link Error:\n{}", String::from_utf8_lossy(&output.stderr));
             }
         }
-        Err(e) => println!("❌ Clang execution failed: {}", e),
+        Err(e) => println!(" Clang execution failed: {}", e),
     }
 }

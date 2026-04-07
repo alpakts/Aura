@@ -138,9 +138,12 @@ impl Parser {
                         expr = Expr::Call(name, args);
                     } else if let Expr::Get(obj, method_name) = expr {
                         // Support obj.method()
-                        // treated as a MethodCall OR NamespacedCall
                         if let Some(parts) = self.resolve_namespace_chain(&Expr::Get(obj.clone(), method_name.clone())) {
-                             expr = Expr::NamespacedCall(parts, args);
+                             if parts[0] == "std" {
+                                 expr = Expr::NamespacedCall(parts, args);
+                             } else {
+                                 expr = Expr::MethodCall(obj, method_name, args);
+                             }
                         } else {
                              expr = Expr::MethodCall(obj, method_name, args);
                         }

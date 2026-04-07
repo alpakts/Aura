@@ -1,32 +1,42 @@
-import "math.aur";
-import "class_test.aur";
+import "lib.aur";
 
-// class Calculator {
-//     var result;
-// }
+print_str("--- Aura Language Comprehensive Demo ---");
 
-// var calc = new Calculator();
-// calc.result = 0;
+// 1. External Function Call (from lib.aur)
+greet();
 
-// print("Initial Result:");
-// print(calc.result);
+// 2. Class Instance & Method Calls
+var calc = new Math();
+calc.setVal(42);
+var v = calc.getVal();
+print_str("Stored value in class:");
+print(v);
 
-// print("Adding 10 and 20:");
-// var sum = add(10, 20);
-// calc.result = sum;
-// print(calc.result);
+var result = calc.add(10, 5);
+print_str("10 + 5 =");
+print(result);
 
-// print("Multiplying by 5:");
-// var prod = multiply(calc.result, 5);
-// calc.result = prod;
-// print(calc.result);
+// 3. Arrays and Loops
+var myArr = [100, 200, 300];
+print_str("Looping through array:");
+for (var i = 0; i < 3; i = i + 1) {
+    print(myArr[i]);
+}
 
-var p1 = new Point();
-p1.y = 20;
-p1.x = p1.y;
-p1.y = 30;
+// 4. Conditional Logic
+var x = 10;
+if (x > 5) {
+    print_str("x is greater than 5");
+} else {
+    print_str("x is NOT greater than 5");
+}
 
-print("Point 1 X:");
-print(p1.x);
-print("Sum of 10 and 20:");
-print(p1.sum(10,20));
+// 5. While Loop
+var count = 0;
+print_str("While loop countdown:");
+while (count < 3) {
+    print(count);
+    count = count + 1;
+}
+
+print_str("Demo execution finished successfully!");

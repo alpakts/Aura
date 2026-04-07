@@ -130,12 +130,11 @@ impl Compiler {
     }
 
     fn resolve_stdlib_call(&mut self, parts: &[String], args: &[Expr]) -> (String, VarType) {
-        if !self.std_modules.contains(&"std".to_string()) {
-            panic!("Standard Library modules (std.*) require 'import \"std\";'");
-        }
-
         match parts[0].as_str() {
             "std" => {
+                if !self.std_modules.contains(&"std".to_string()) {
+                    panic!("Standard Library modules (std.*) require 'import \"std\";'");
+                }
                 if parts.len() < 3 { panic!("Invalid std call. Expected e.g. std.net.listen"); }
                 match parts[1].as_str() {
                     "net" => self.emit_std_net_dispatch(&parts[2], args),
@@ -154,120 +153,27 @@ impl Compiler {
                 let (obj_val, obj_type) = self.compile_expr(&args[1]);
                 
                 if let VarType::Instance(class_name) = obj_type {
-                    // --- 1. SOKET SETUP ---
+                    // 1. Soket Kurulumu
                     let sock = self.get_reg();
                     self.emit(&format!("  {} = call i32 @aura_net_setup(i32 {})\n", sock, port_val));
 
-                    // Setup başarısız olursa programı güvenle kapat (-1 kontrolü)
-                    let is_ok = self.get_reg();
-                    self.emit(&format!("  {} = icmp eq i32 {}, -1\n", is_ok, sock));
-                    let l_fail = self.get_label();
-                    let l_setup_ok = self.get_label();
-                    self.emit(&format!("  br i1 {}, label %{}, label %{}\n", is_ok, l_fail, l_setup_ok));
-
-                    self.emit(&format!("{}:\n", l_fail));
-                    self.emit("  ret i8* null\n");
-
-                    self.emit(&format!("{}:\n", l_setup_ok));
-
-                    // --- 2. STACK OVERFLOW FIX (ALLOCA'LAR DÖNGÜ DIŞINA!) ---
-                    let buf = self.get_reg();
-                    self.emit(&format!("  {} = alloca [1024 x i8]\n", buf));
-                    let buf_ptr = self.get_reg();
-                    self.emit(&format!("  {} = getelementptr inbounds [1024 x i8], [1024 x i8]* {}, i32 0, i32 0\n", buf_ptr, buf));
-                    
-                    let p_val_final = self.get_reg();
-                    self.emit(&format!("  {} = alloca i32\n", p_val_final));
-
-                    // --- 3. SONSUZ DÖNGÜ (SERVER LOOP) ---
-                    let start_label = self.get_label();
-                    self.emit(&format!("  br label %{}\n", start_label));
-                    self.emit(&format!("{}:\n", start_label));
-
-                    // Her yeni istekte buffer'ı temizle (Sıfırla)
-                    self.emit(&format!("  call i8* @memset(i8* {}, i32 0, i32 1024)\n", buf_ptr));
-
-                    let client_sock = self.get_reg();
-                    self.emit(&format!("  {} = call i32 @accept(i32 {}, i8* null, i32* null)\n", client_sock, sock));
-                    
-                    self.emit(&format!("  call i32 @recv(i32 {}, i8* {}, i32 1024, i32 0)\n", client_sock, buf_ptr));
-
-                    // JSON Header
-                    let h1 = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
-                    let h1_val = self.add_string(h1.to_string());
-                    let h1_ptr = self.get_reg();
-                    self.emit(&format!("  {} = getelementptr inbounds [55 x i8], [55 x i8]* {}, i32 0, i32 0\n", h1_ptr, h1_val));
-                    self.emit(&format!("  call i32 @send(i32 {}, i8* {}, i32 54, i32 0)\n", client_sock, h1_ptr));
-
-                    // Routing Logic
+                    // 2. Rotaları Kaydet (Sınıf metodlarını register et)
                     if let Some(methods) = self.class_methods.get(&class_name).cloned() {
                         for m in methods {
                             let m_val = self.add_string(m.to_string());
                             let m_ptr = self.get_reg();
                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
                             
-                            let str_match = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* {})\n", str_match, buf_ptr, m_ptr));
-                            
-                            let is_match = self.get_reg();
-                            self.emit(&format!("  {} = icmp ne i8* {}, null\n", is_match, str_match));
-                            
-                            let l_then = self.get_label();
-                            let l_next = self.get_label();
-                            self.emit(&format!("  br i1 {}, label %{}, label %{}\n", is_match, l_then, l_next));
-                            
-                            self.emit(&format!("{}:\n", l_then));
-                            
-                            // Simple parameter parsing
-                            let q_mark = self.add_string("?".to_string());
-                            let q_ptr = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", q_ptr, buf_ptr, q_mark));
-                            
-                            self.emit(&format!("  store i32 0, i32* {}\n", p_val_final));
-                            
-                            let has_q = self.get_reg();
-                            self.emit(&format!("  {} = icmp ne i8* {}, null\n", has_q, q_ptr));
-                            let l_q_then = self.get_label();
-                            let l_q_next = self.get_label();
-                            self.emit(&format!("  br i1 {}, label %{}, label %{}\n", has_q, l_q_then, l_q_next));
-                            
-                            self.emit(&format!("{}:\n", l_q_then));
-                            let eq_val = self.add_string("=".to_string());
-                            let eq_ptr = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", eq_ptr, q_ptr, eq_val));
-                            let has_eq = self.get_reg();
-                            self.emit(&format!("  {} = icmp ne i8* {}, null\n", has_eq, eq_ptr));
-                            let l_eq_then = self.get_label();
-                            self.emit(&format!("  br i1 {}, label %{}, label %{}\n", has_eq, l_eq_then, l_q_next));
-                            
-                            self.emit(&format!("{}:\n", l_eq_then));
-                            let v_start = self.get_reg();
-                            self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i32 1\n", v_start, eq_ptr));
-                            let parsed = self.get_reg();
-                            self.emit(&format!("  {} = call i32 @atoi(i8* {})\n", parsed, v_start));
-                            self.emit(&format!("  store i32 {}, i32* {}\n", parsed, p_val_final));
-                            self.emit(&format!("  br label %{}\n", l_q_next));
-
-                            self.emit(&format!("{}:\n", l_q_next));
-                            let arg = self.get_reg();
-                            self.emit(&format!("  {} = load i32, i32* {}\n", arg, p_val_final));
-                            let res_ptr = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @fn_{}_{}(%struct.{}* {}, i32 {})\n", res_ptr, class_name, m, class_name, obj_val, arg));
-                            let res_len = self.get_reg();
-                            self.emit(&format!("  {} = call i32 @strlen(i8* {})\n", res_len, res_ptr));
-                            self.emit(&format!("  call i32 @send(i32 {}, i8* {}, i32 {}, i32 0)\n", client_sock, res_ptr, res_len));
-                            self.emit(&format!("  br label %{}\n", l_next));
-                            
-                            self.emit(&format!("{}:\n", l_next));
+                            // Fonksiyon pointer'ını al (fn_Class_Method)
+                            let fn_name = format!("fn_{}_{}", class_name, m);
+                            self.emit(&format!("  call void @aura_mvc_register(i8* {}, i8* bitcast (i8* (%struct.{}*, i32)* @{} to i8*))\n", m_ptr, class_name, fn_name));
                         }
                     }
-                    
-                    if self.target_os == TargetOs::Windows {
-                        self.emit(&format!("  call i32 @closesocket(i32 {})\n", client_sock));
-                    } else {
-                        self.emit(&format!("  call i32 @close(i32 {})\n", client_sock));
-                    }
-                    self.emit(&format!("  br label %{}\n", start_label)); // Infinite Loop!
+
+                    // 3. MVC Sunucusunu Başlat (Sonsuz Döngü C tarafında)
+                    let cast_reg = self.get_reg();
+                    self.emit(&format!("  {} = bitcast %struct.{}* {} to i8*\n", cast_reg, class_name, obj_val));
+                    self.emit(&format!("  call void @aura_mvc_serve(i32 {}, i8* {})\n", sock, cast_reg));
 
                     ("0".to_string(), VarType::Int)
                 } else { panic!("api_listen requires a class instance."); }
@@ -1123,6 +1029,8 @@ impl Compiler {
                 "aura_print_str" => decls.insert("declare void @aura_print_str(i8*)"),
                 "aura_str_contains" => decls.insert("declare i32 @aura_str_contains(i8*, i8*)"),
                 "aura_str_find" => decls.insert("declare i8* @aura_str_find(i8*, i8*)"),
+                "aura_mvc_register" => decls.insert("declare void @aura_mvc_register(i8*, i8*)"),
+                "aura_mvc_serve" => decls.insert("declare void @aura_mvc_serve(i32, i8*)"),
                 _ => false, // User function or unknown
             };
         }

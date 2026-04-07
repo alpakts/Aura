@@ -1,0 +1,19 @@
+class Math {
+    var value;
+
+    func add(a, b) {
+        return a + b;
+    }
+    
+    func setVal(v) {
+        this.value = v;
+    }
+
+    func getVal() {
+        return this.value;
+    }
+}
+
+func greet() {
+    print_str("Hello from Aura Library!");
+}
