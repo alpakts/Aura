@@ -61,13 +61,17 @@ void aura_mvc_serve(int sock, void* instance) {
         char* path_start = strstr(buffer, "GET /");
         if (path_start) {
             path_start += 5;
-            char* path_end = strpbrk(path_start, " ?\r\n");
+            char* path_end = strpbrk(path_start, " \r\n");
             if (path_end) {
                 char method_name[64] = {0};
                 size_t len = path_end - path_start;
+                char* q_mark = strchr(path_start, '?');
+                if (q_mark && q_mark < path_end) {
+                    len = q_mark - path_start;
+                }
                 if (len > 63) len = 63;
                 
-                // strncpy yerine güvenli kopyalama
+                // Safe copy
                 for (size_t i = 0; i < len; i++) {
                     method_name[i] = path_start[i];
                 }
@@ -90,7 +94,7 @@ void aura_mvc_serve(int sock, void* instance) {
                         char* response_body = registry[i].func(instance, param);
                         
                         char header[256];
-                        int h_len = sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n\r\n", strlen(response_body));
+                        int h_len = sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n\r\n", strlen(response_body));
                         
                         send(client_sock, header, h_len, 0);
                         send(client_sock, response_body, (int)strlen(response_body), 0);

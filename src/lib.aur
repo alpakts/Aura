@@ -6,18 +6,18 @@ class UserController {
     }
 
     func getUser(id) {
-        var names = ["Guest", "Alper", "Aura"];
-        if (id < 3) {
-            return names[id];
+        var tpl = read_file("views/profile.html");
+        if (id == 1) {
+            return render(tpl, "{username}", "Alper");
         }
-        return "User Not Found";
+        if (id == 2) {
+            return render(tpl, "{username}", "Aura AI");
+        }
+        return render(tpl, "{username}", "Unknown User");
     }
 
     func getStatus(dummy) {
-        if (this.status == 1) {
-            return "System Status: Active";
-        }
-        return "System Status: Offline";
+        return read_file("views/status.html");
     }
 }
 

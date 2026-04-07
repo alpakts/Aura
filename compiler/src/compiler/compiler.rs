@@ -573,6 +573,33 @@ impl Compiler {
                     self.emit(&format!("  {} = call i8* @malloc(i32 256)\n", malloc_reg));
                     self.emit(&format!("  call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i32 0, i32 0), i8* {})\n", malloc_reg));
                     (malloc_reg, VarType::Str)
+                } else if name == "read_file" {
+                    let (path_val, _) = self.compile_expr(&args[0]);
+                    let reg = self.get_reg();
+                    let final_ptr = if path_val.starts_with("@str.") {
+                         let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == path_val).unwrap().2;
+                         let p_reg = self.get_reg();
+                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", p_reg, str_len, str_len, path_val));
+                         p_reg
+                    } else {
+                         path_val
+                    };
+                    self.emit(&format!("  {} = call i8* @aura_read_file(i8* {})\n", reg, final_ptr));
+                    (reg, VarType::Str)
+                } else if name == "render" {
+                    let (tpl_val, _) = self.compile_expr(&args[0]);
+                    let (key_val, _) = self.compile_expr(&args[1]);
+                    let (val_val, val_type) = self.compile_expr(&args[2]);
+                    
+                    let final_val = if val_type == VarType::Int {
+                        let s_reg = self.get_reg();
+                        self.emit(&format!("  {} = call i8* @aura_int_to_str(i32 {})\n", s_reg, val_val));
+                        s_reg
+                    } else { val_val };
+
+                    let res_reg = self.get_reg();
+                    self.emit(&format!("  {} = call i8* @aura_str_replace(i8* {}, i8* {}, i8* {})\n", res_reg, tpl_val, key_val, final_val));
+                    (res_reg, VarType::Str)
                 } else if name == "api_listen" {
                     // Check if std.net is imported
                     if self.std_modules.contains(&"std.net".to_string()) || self.std_modules.contains(&"std".to_string()) {
@@ -1031,6 +1058,9 @@ impl Compiler {
                 "aura_str_find" => decls.insert("declare i8* @aura_str_find(i8*, i8*)"),
                 "aura_mvc_register" => decls.insert("declare void @aura_mvc_register(i8*, i8*)"),
                 "aura_mvc_serve" => decls.insert("declare void @aura_mvc_serve(i32, i8*)"),
+                "aura_read_file" => decls.insert("declare i8* @aura_read_file(i8*)"),
+                "aura_str_replace" => decls.insert("declare i8* @aura_str_replace(i8*, i8*, i8*)"),
+                "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i32)"),
                 _ => false, // User function or unknown
             };
         }

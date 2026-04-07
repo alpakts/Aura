@@ -61,3 +61,58 @@ void aura_close_socket(int sock) {
     close(sock);
 #endif
 }
+
+char* aura_read_file(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return "File not found";
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char* string = malloc(fsize + 1);
+    fread(string, fsize, 1, f);
+    fclose(f);
+    string[fsize] = 0;
+    return string;
+}
+
+char* aura_str_replace(const char* orig, const char* rep, const char* with) {
+    char* result; 
+    char* ins;    
+    char* tmp;    
+    int len_rep;  
+    int len_with; 
+    int len_front; 
+    int count;    
+
+    if (!orig || !rep) return NULL;
+    len_rep = strlen(rep);
+    if (len_rep == 0) return NULL; 
+    if (!with) with = "";
+    len_with = strlen(with);
+
+    ins = (char*)orig;
+    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+
+    if (!result) return NULL;
+
+    while (count--) {
+        ins = strstr(orig, rep);
+        len_front = ins - orig;
+        tmp = strncpy(tmp, orig, len_front) + len_front;
+        tmp = strcpy(tmp, with) + len_with;
+        orig += len_front + len_rep; 
+    }
+    strcpy(tmp, orig);
+    return result;
+}
+
+char* aura_int_to_str(int n) {
+    char* s = malloc(20);
+    sprintf(s, "%d", n);
+    return s;
+}
