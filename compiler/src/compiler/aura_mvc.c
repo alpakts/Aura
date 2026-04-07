@@ -18,8 +18,7 @@
     #include <string.h>
 #endif
 
-// Aura'nın beklediği fonksiyon imzası
-typedef char* (*AuraControllerFunc)(void* instance, int param);
+typedef char* (*AuraControllerFunc)(void* instance, long long param);
 
 typedef struct {
     char path[64];
@@ -42,20 +41,24 @@ void aura_mvc_register(const char* path, AuraControllerFunc func_ptr) {
     }
 }
 
-void aura_mvc_serve(int sock, void* instance) {
-    if (sock == -1) return;
+void aura_mvc_serve(long long sock_ll, void* instance) {
+    if (sock_ll == -1) return;
 
     printf("MVC Server listening...\n");
     while (1) {
 #ifdef _WIN32
-        int client_sock = (int)accept(sock, NULL, NULL);
+        long long client_sock = (long long)accept((SOCKET)sock_ll, NULL, NULL);
 #else
-        int client_sock = accept(sock, NULL, NULL);
+        long long client_sock = (long long)accept((int)sock_ll, NULL, NULL);
 #endif
         if (client_sock == -1) continue;
 
         char buffer[1024] = {0};
-        recv(client_sock, buffer, 1024, 0);
+#ifdef _WIN32
+        recv((SOCKET)client_sock, buffer, 1024, 0);
+#else
+        recv((int)client_sock, buffer, 1024, 0);
+#endif
 
         // Basit routing
         char* path_start = strstr(buffer, "GET /");
@@ -82,12 +85,12 @@ void aura_mvc_serve(int sock, void* instance) {
                 for (int i = 0; i < route_count; i++) {
                     if (strcmp(registry[i].path, method_name) == 0) {
                         // Parametre parse (basitçe ?'dan sonraki = sonrasını alıyoruz)
-                        int param = 0;
+                        long long param = 0;
                         char* q = strchr(path_start, '?');
                         if (q && q < path_end) {
                             char* eq = strchr(q, '=');
                             if (eq && eq < path_end) {
-                                param = atoi(eq + 1);
+                                sscanf(eq + 1, "%lld", &param);
                             }
                         }
 
@@ -96,8 +99,13 @@ void aura_mvc_serve(int sock, void* instance) {
                         char header[256];
                         int h_len = sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %zu\r\n\r\n", strlen(response_body));
                         
-                        send(client_sock, header, h_len, 0);
-                        send(client_sock, response_body, (int)strlen(response_body), 0);
+#ifdef _WIN32
+                        send((SOCKET)client_sock, header, h_len, 0);
+                        send((SOCKET)client_sock, response_body, (int)strlen(response_body), 0);
+#else
+                        send((int)client_sock, header, h_len, 0);
+                        send((int)client_sock, response_body, (int)strlen(response_body), 0);
+#endif
                         found = 1;
                         break;
                     }
@@ -105,15 +113,19 @@ void aura_mvc_serve(int sock, void* instance) {
 
                 if (!found) {
                     char error404[] = "HTTP/1.1 404 Not Found\r\n\r\n{\"error\":\"Route not found\"}";
-                    send(client_sock, error404, (int)strlen(error404), 0);
+#ifdef _WIN32
+                    send((SOCKET)client_sock, error404, (int)strlen(error404), 0);
+#else
+                    send((int)client_sock, error404, (int)strlen(error404), 0);
+#endif
                 }
             }
         }
 
 #ifdef _WIN32
-        closesocket(client_sock);
+        closesocket((SOCKET)client_sock);
 #else
-        close(client_sock);
+        close((int)client_sock);
 #endif
     }
 }

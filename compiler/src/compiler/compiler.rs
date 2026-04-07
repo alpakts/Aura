@@ -23,10 +23,10 @@ pub struct Compiler {
     main_body: String,  
     current_output: String, // Buffer for functions
     
-    reg_counter: i32,
-    label_counter: i32,
-    str_counter: i32,
-    string_literals: Vec<(i32, String, usize)>,
+    reg_counter: i64,
+    label_counter: i64,
+    str_counter: i64,
+    string_literals: Vec<(i64, String, usize)>,
     
     var_types: HashMap<String, VarType>, 
     is_in_function: bool, 
@@ -155,25 +155,25 @@ impl Compiler {
                 if let VarType::Instance(class_name) = obj_type {
                     // 1. Soket Kurulumu
                     let sock = self.get_reg();
-                    self.emit(&format!("  {} = call i32 @aura_net_setup(i32 {})\n", sock, port_val));
+                    self.emit(&format!("  {} = call i64 @aura_net_setup(i64 {})\n", sock, port_val));
 
-                    // 2. Rotaları Kaydet (Sınıf metodlarını register et)
+                    // 2. RotalarÄ± Kaydet (SÄ±nÄ±f metodlarÄ±nÄ± register et)
                     if let Some(methods) = self.class_methods.get(&class_name).cloned() {
                         for m in methods {
                             let m_val = self.add_string(m.to_string());
                             let m_ptr = self.get_reg();
-                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
+                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
                             
-                            // Fonksiyon pointer'ını al (fn_Class_Method)
+                            // Fonksiyon pointer'Ä±nÄ± al (fn_Class_Method)
                             let fn_name = format!("fn_{}_{}", class_name, m);
-                            self.emit(&format!("  call void @aura_mvc_register(i8* {}, i8* bitcast (i8* (%struct.{}*, i32)* @{} to i8*))\n", m_ptr, class_name, fn_name));
+                            self.emit(&format!("  call void @aura_mvc_register(i8* {}, i8* bitcast (i8* (%struct.{}*, i64)* @{} to i8*))\n", m_ptr, class_name, fn_name));
                         }
                     }
 
-                    // 3. MVC Sunucusunu Başlat (Sonsuz Döngü C tarafında)
+                    // 3. MVC Sunucusunu BaÅŸlat (Sonsuz DÃ¶ngÃ¼ C tarafÄ±nda)
                     let cast_reg = self.get_reg();
                     self.emit(&format!("  {} = bitcast %struct.{}* {} to i8*\n", cast_reg, class_name, obj_val));
-                    self.emit(&format!("  call void @aura_mvc_serve(i32 {}, i8* {})\n", sock, cast_reg));
+                    self.emit(&format!("  call void @aura_mvc_serve(i64 {}, i8* {})\n", sock, cast_reg));
 
                     ("0".to_string(), VarType::Int)
                 } else { panic!("api_listen requires a class instance."); }
@@ -187,7 +187,7 @@ impl Compiler {
             "print" | "println" => {
                 let (val, vtype) = self.compile_expr(&args[0]);
                 if vtype == VarType::Int {
-                    self.emit(&format!("  call void @aura_print_int(i32 {})\n", val));
+                    self.emit(&format!("  call void @aura_print_int(i64 {})\n", val));
                 } else if vtype == VarType::Str {
                     self.emit(&format!("  call void @aura_print_str(i8* {})\n", val));
                 }
@@ -202,7 +202,7 @@ impl Compiler {
             VarType::Bool => val,
             VarType::Int => {
                 let reg = self.get_reg();
-                self.emit(&format!("  {} = icmp ne i32 {}, 0\n", reg, val));
+                self.emit(&format!("  {} = icmp ne i64 {}, 0\n", reg, val));
                 reg
             },
             VarType::Str | VarType::Instance(_) => {
@@ -221,34 +221,34 @@ impl Compiler {
             let wsa_data = self.get_reg();
             self.emit(&format!("  {} = alloca [512 x i8]\n", wsa_data)); 
             let wsa_ptr = self.get_reg();
-            self.emit(&format!("  {} = getelementptr inbounds [512 x i8], [512 x i8]* {}, i32 0, i32 0\n", wsa_ptr, wsa_data));
-            self.emit(&format!("  call i32 @WSAStartup(i32 514, i8* {})\n", wsa_ptr));
+            self.emit(&format!("  {} = getelementptr inbounds [512 x i8], [512 x i8]* {}, i64 0, i64 0\n", wsa_ptr, wsa_data));
+            self.emit(&format!("  call i64 @WSAStartup(i64 514, i8* {})\n", wsa_ptr));
         }
 
         // Socket & Listen Setup
         let sock = self.get_reg();
-        self.emit(&format!("  {} = call i32 @socket(i32 2, i32 1, i32 6)\n", sock));
+        self.emit(&format!("  {} = call i64 @socket(i64 2, i64 1, i64 6)\n", sock));
         let addr = self.get_reg();
         self.emit(&format!("  {} = alloca [16 x i8]\n", addr)); 
         let addr_ptr = self.get_reg();
-        self.emit(&format!("  {} = getelementptr inbounds [16 x i8], [16 x i8]* {}, i32 0, i32 0\n", addr_ptr, addr));
-        self.emit(&format!("  call void @llvm.memset.p0i8.i32(i8* {}, i8 0, i32 16, i1 false)\n", addr_ptr));
+        self.emit(&format!("  {} = getelementptr inbounds [16 x i8], [16 x i8]* {}, i64 0, i64 0\n", addr_ptr, addr));
+        self.emit(&format!("  call void @llvm.memset.p0i8.i64(i8* {}, i8 0, i64 16, i1 false)\n", addr_ptr));
         let fam_i16 = self.get_reg();
         self.emit(&format!("  {} = bitcast i8* {} to i16*\n", fam_i16, addr_ptr));
         self.emit(&format!("  store i16 2, i16* {}\n", fam_i16));
         let port_ptr = self.get_reg();
-        self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i32 2\n", port_ptr, addr_ptr));
+        self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i64 2\n", port_ptr, addr_ptr));
         let port_ptr_16 = self.get_reg();
         self.emit(&format!("  {} = bitcast i8* {} to i16*\n", port_ptr_16, port_ptr));
         
-        // Port handling (port is i32 string for now)
-        let port_i32 = self.get_reg();
-        self.emit(&format!("  {} = call i16 @htons(i16 {})\n", port_i32, port));
-        self.emit(&format!("  store i16 {}, i16* {}\n", port_i32, port_ptr_16));
+        // Port handling (port is i64 string for now)
+        let port_i64 = self.get_reg();
+        self.emit(&format!("  {} = call i16 @htons(i16 {})\n", port_i64, port));
+        self.emit(&format!("  store i16 {}, i16* {}\n", port_i64, port_ptr_16));
 
-        self.emit(&format!("  call i32 @bind(i32 {}, i8* {}, i32 16)\n", sock, addr_ptr));
-        self.emit(&format!("  call i32 @listen(i32 {}, i32 5)\n", sock));
-        self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @fmt_api_start, i32 0, i32 0), i32 {})\n", port));
+        self.emit(&format!("  call i64 @bind(i64 {}, i8* {}, i64 16)\n", sock, addr_ptr));
+        self.emit(&format!("  call i64 @listen(i64 {}, i64 5)\n", sock));
+        self.emit(&format!("  call i64 (i8*, ...) @printf(i8* getelementptr inbounds ([9 x i8], [9 x i8]* @fmt_api_start, i64 0, i64 0), i64 {})\n", port));
 
         // --- Router Loop ---
         let start_label = self.get_label();
@@ -257,28 +257,28 @@ impl Compiler {
 
         // Accept
         let client_sock = self.get_reg();
-        self.emit(&format!("  {} = call i32 @accept(i32 {}, i8* null, i32* null)\n", client_sock, sock));
+        self.emit(&format!("  {} = call i64 @accept(i64 {}, i8* null, i64* null)\n", client_sock, sock));
         
         // Request Oku
         let buf = self.get_reg();
         self.emit(&format!("  {} = alloca [1024 x i8]\n", buf));
         let buf_ptr = self.get_reg();
-        self.emit(&format!("  {} = getelementptr inbounds [1024 x i8], [1024 x i8]* {}, i32 0, i32 0\n", buf_ptr, buf));
-        self.emit(&format!("  call i32 @recv(i32 {}, i8* {}, i32 1024, i32 0)\n", client_sock, buf_ptr));
+        self.emit(&format!("  {} = getelementptr inbounds [1024 x i8], [1024 x i8]* {}, i64 0, i64 0\n", buf_ptr, buf));
+        self.emit(&format!("  call i64 @recv(i64 {}, i8* {}, i64 1024, i64 0)\n", client_sock, buf_ptr));
 
         // JSON Header Gonder
         let h1 = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
         let h1_val = self.add_string(h1.to_string());
         let h1_ptr = self.get_reg();
-        self.emit(&format!("  {} = getelementptr inbounds [55 x i8], [55 x i8]* {}, i32 0, i32 0\n", h1_ptr, h1_val));
-        self.emit(&format!("  call i32 @send(i32 {}, i8* {}, i32 54, i32 0)\n", client_sock, h1_ptr));
+        self.emit(&format!("  {} = getelementptr inbounds [55 x i8], [55 x i8]* {}, i64 0, i64 0\n", h1_ptr, h1_val));
+        self.emit(&format!("  call i64 @send(i64 {}, i8* {}, i64 54, i64 0)\n", client_sock, h1_ptr));
 
         // --- Dynamic Method Routing ---
         if let Some(methods) = self.class_methods.get(&class_name).cloned() {
             for m in methods {
                 let m_val = self.add_string(m.to_string());
                 let m_ptr = self.get_reg();
-                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
+                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", m_ptr, m.len()+1, m.len()+1, m_val));
                 
                 let str_match = self.get_reg();
                 self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* {})\n", str_match, buf_ptr, m_ptr));
@@ -295,11 +295,11 @@ impl Compiler {
                 // Buffer'da '?' ara
                 let q_mark = self.add_string("?".to_string());
                 let q_ptr = self.get_reg();
-                self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", q_ptr, buf_ptr, q_mark));
+                self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i64 0, i64 0))\n", q_ptr, buf_ptr, q_mark));
                 
                 let param_val_final = self.get_reg();
-                self.emit(&format!("  {} = alloca i32\n", param_val_final));
-                self.emit(&format!("  store i32 0, i32* {}\n", param_val_final));
+                self.emit(&format!("  {} = alloca i64\n", param_val_final));
+                self.emit(&format!("  store i64 0, i64* {}\n", param_val_final));
 
                 let has_q = self.get_reg();
                 self.emit(&format!("  {} = icmp ne i8* {}, null\n", has_q, q_ptr));
@@ -311,7 +311,7 @@ impl Compiler {
                 // '=' ara
                 let eq_mark = self.add_string("=".to_string());
                 let eq_ptr = self.get_reg();
-                self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i32 0, i32 0))\n", eq_ptr, q_ptr, eq_mark));
+                self.emit(&format!("  {} = call i8* @strstr(i8* {}, i8* getelementptr inbounds ([2 x i8], [2 x i8]* {}, i64 0, i64 0))\n", eq_ptr, q_ptr, eq_mark));
                 
                 let has_eq = self.get_reg();
                 self.emit(&format!("  {} = icmp ne i8* {}, null\n", has_eq, eq_ptr));
@@ -320,25 +320,25 @@ impl Compiler {
                 
                 self.emit(&format!("{}:\n", l_eq_then));
                 let val_start = self.get_reg();
-                self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i32 1\n", val_start, eq_ptr));
+                self.emit(&format!("  {} = getelementptr inbounds i8, i8* {}, i64 1\n", val_start, eq_ptr));
                 let parsed_int = self.get_reg();
-                self.emit(&format!("  {} = call i32 @atoi(i8* {})\n", parsed_int, val_start));
-                self.emit(&format!("  store i32 {}, i32* {}\n", parsed_int, param_val_final));
+                self.emit(&format!("  {} = call i64 @atoi(i8* {})\n", parsed_int, val_start));
+                self.emit(&format!("  store i64 {}, i64* {}\n", parsed_int, param_val_final));
                 self.emit(&format!("  br label %{}\n", l_q_next));
 
                 self.emit(&format!("{}:\n", l_q_next));
                 let final_arg = self.get_reg();
-                self.emit(&format!("  {} = load i32, i32* {}\n", final_arg, param_val_final));
+                self.emit(&format!("  {} = load i64, i64* {}\n", final_arg, param_val_final));
 
                 // Metodu cagir: Class_Method(this, param)
                 let res_ptr = self.get_reg();
-                self.emit(&format!("  {} = call i8* @{}_{}(%struct.{}* {}, i32 {})\n", res_ptr, class_name, m, class_name, obj_val, final_arg));
+                self.emit(&format!("  {} = call i8* @{}_{}(%struct.{}* {}, i64 {})\n", res_ptr, class_name, m, class_name, obj_val, final_arg));
                 
                 // Uzunlugu olc (strlen)
                 let res_len = self.get_reg();
-                self.emit(&format!("  {} = call i32 @strlen(i8* {})\n", res_len, res_ptr));
+                self.emit(&format!("  {} = call i64 @strlen(i8* {})\n", res_len, res_ptr));
                 
-                self.emit(&format!("  call i32 @send(i32 {}, i8* {}, i32 {}, i32 0)\n", client_sock, res_ptr, res_len));
+                self.emit(&format!("  call i64 @send(i64 {}, i8* {}, i64 {}, i64 0)\n", client_sock, res_ptr, res_len));
                 self.emit(&format!("  br label %{}\n", l_next));
                 
                 self.emit(&format!("{}:\n", l_next));
@@ -346,9 +346,9 @@ impl Compiler {
         }
 
         if self.target_os == TargetOs::Windows {
-            self.emit(&format!("  call i32 @closesocket(i32 {})\n", client_sock));
+            self.emit(&format!("  call i64 @closesocket(i64 {})\n", client_sock));
         } else {
-            self.emit(&format!("  call i32 @close(i32 {})\n", client_sock));
+            self.emit(&format!("  call i64 @close(i64 {})\n", client_sock));
         }
         self.emit(&format!("  br label %{}\n", start_label)); // Infinite Loop!
 
@@ -400,7 +400,7 @@ impl Compiler {
                 if let Some(vtype) = vtype_opt {
                     let reg = self.get_reg();
                     match &vtype { 
-                        VarType::Int => { self.emit(&format!("  {} = load i32, i32* %{}_ptr\n", reg, name)); }, 
+                        VarType::Int => { self.emit(&format!("  {} = load i64, i64* %{}_ptr\n", reg, name)); }, 
                         VarType::Str => { self.emit(&format!("  {} = load i8*, i8** %{}_ptr\n", reg, name)); },
                         VarType::Bool => { self.emit(&format!("  {} = load i1, i1* %{}_ptr\n", reg, name)); },
                         VarType::Instance(cls) => { self.emit(&format!("  {} = load %struct.{}*, %struct.{}** %{}_ptr\n", reg, cls, cls, name)); },
@@ -418,7 +418,7 @@ impl Compiler {
                     let size = field_count * 8; 
                     
                     let malloc_reg = self.get_reg();
-                    self.emit(&format!("  {} = call i8* @malloc(i32 {})\n", malloc_reg, size));
+                    self.emit(&format!("  {} = call i8* @malloc(i64 {})\n", malloc_reg, size));
                     
                     let cast_reg = self.get_reg();
                     self.emit(&format!("  {} = bitcast i8* {} to %struct.{}*\n", cast_reg, malloc_reg, class_name));
@@ -442,10 +442,7 @@ impl Compiler {
                      let val_reg = self.get_reg();
                      self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, gep_reg));
                      
-                     // Truncate to i32 for internal Aura logic (math etc)
-                     let trunc_reg = self.get_reg();
-                     self.emit(&format!("  {} = trunc i64 {} to i32\n", trunc_reg, val_reg));
-                     (trunc_reg, VarType::Int) 
+                     (val_reg, VarType::Int) 
                 } else { panic!("Property access on non-object"); }
             }
             Expr::Set(obj_expr, field_name, val_expr) => {
@@ -457,9 +454,7 @@ impl Compiler {
                      
                      let (val_val, val_type) = self.compile_expr(val_expr);
                      let final_val = if val_type == VarType::Int {
-                         let ext_reg = self.get_reg();
-                         self.emit(&format!("  {} = sext i32 {} to i64\n", ext_reg, val_val));
-                         ext_reg
+                         val_val.clone()
                      } else if val_type == VarType::Str {
                          let ptr_reg = self.get_reg();
                          self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", ptr_reg, val_val));
@@ -480,11 +475,11 @@ impl Compiler {
                      let (idx_val, _) = self.compile_expr(index_expr);
                      let ptr_reg = self.get_reg();
                      let llvm_type = match *elem_type {
-                         VarType::Int => "i32",
+                         VarType::Int => "i64",
                          VarType::Str => "i8*",
-                         _ => "i32"
+                         _ => "i64"
                      };
-                     self.emit(&format!("  {} = getelementptr inbounds [{} x {}], [{} x {}]* %{}_ptr, i32 0, i32 {}\n", 
+                     self.emit(&format!("  {} = getelementptr inbounds [{} x {}], [{} x {}]* %{}_ptr, i64 0, i64 {}\n", 
                          ptr_reg, len, llvm_type, len, llvm_type, name, idx_val));
                      
                      let val_reg = self.get_reg();
@@ -516,7 +511,7 @@ impl Compiler {
 
                     for arg in args {
                         let (val, _) = self.compile_expr(arg);
-                        arg_vals.push(format!("i32 {}", val)); // Simplify: assume i32 args
+                        arg_vals.push(format!("i64 {}", val)); // Simplify: assume i64 args
                     }
                     
                     let args_str = arg_vals.join(", ");
@@ -524,7 +519,7 @@ impl Compiler {
                     // User methods also use 'fn_' prefix mangling
                     self.emit(&format!("  {} = call i8* @fn_{}({})\n", reg, func_name, args_str));
                     let int_reg = self.get_reg();
-                    self.emit(&format!("  {} = ptrtoint i8* {} to i32\n", int_reg, reg));
+                    self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, reg));
                     (int_reg, VarType::Int)
                 } else {
                     panic!("Method calls only supported on class instances.");
@@ -549,17 +544,17 @@ impl Compiler {
                      if val.starts_with("@str.") {
                          let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                          let ptr_reg = self.get_reg();
-                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
-                         self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", ptr_reg));
+                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, val));
+                         self.emit(&format!("  call i64 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i64 0, i64 0), i8* {})\n", ptr_reg));
                      } else {
                          let final_ptr = if vtype == VarType::Str {
-                             val // Zaten i8* (input_str'den gelmiş olabilir)
+                             val // Zaten i8* (input_str'den gelmiÅŸ olabilir)
                          } else {
                              let ptr_reg = self.get_reg();
-                             self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr_reg, val));
+                             self.emit(&format!("  {} = inttoptr i64 {} to i8*\n", ptr_reg, val));
                              ptr_reg
                          };
-                         self.emit(&format!("  call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0), i8* {})\n", final_ptr));
+                         self.emit(&format!("  call i64 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @fmt_str, i64 0, i64 0), i8* {})\n", final_ptr));
                      }
                      ("0".to_string(), VarType::Int) 
                 } else if name == "free" {
@@ -574,15 +569,15 @@ impl Compiler {
                     }
                 } else if name == "input" {
                     let ptr_reg = self.get_reg();
-                    self.emit(&format!("  {} = alloca i32\n", ptr_reg));
-                    self.emit(&format!("  call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_num, i32 0, i32 0), i32* {})\n", ptr_reg));
+                    self.emit(&format!("  {} = alloca i64\n", ptr_reg));
+                    self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_num, i64 0, i64 0), i64* {})\n", ptr_reg));
                     let val_reg = self.get_reg();
-                    self.emit(&format!("  {} = load i32, i32* {}\n", val_reg, ptr_reg));
+                    self.emit(&format!("  {} = load i64, i64* {}\n", val_reg, ptr_reg));
                     (val_reg, VarType::Int)
                 } else if name == "input_str" {
                     let malloc_reg = self.get_reg();
-                    self.emit(&format!("  {} = call i8* @malloc(i32 256)\n", malloc_reg));
-                    self.emit(&format!("  call i32 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i32 0, i32 0), i8* {})\n", malloc_reg));
+                    self.emit(&format!("  {} = call i8* @malloc(i64 256)\n", malloc_reg));
+                    self.emit(&format!("  call i64 (i8*, ...) @scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @fmt_input_str, i64 0, i64 0), i8* {})\n", malloc_reg));
                     (malloc_reg, VarType::Str)
                 } else if name == "read_file" {
                     let (path_val, _) = self.compile_expr(&args[0]);
@@ -590,7 +585,7 @@ impl Compiler {
                     let final_ptr = if path_val.starts_with("@str.") {
                          let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == path_val).unwrap().2;
                          let p_reg = self.get_reg();
-                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", p_reg, str_len, str_len, path_val));
+                         self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, path_val));
                          p_reg
                     } else {
                          path_val
@@ -606,7 +601,7 @@ impl Compiler {
                         let mut current_tpl = if tpl_val.starts_with("@str.") {
                              let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == tpl_val).unwrap().2;
                              let p_reg = self.get_reg();
-                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", p_reg, str_len, str_len, tpl_val));
+                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", p_reg, str_len, str_len, tpl_val));
                              p_reg
                         } else { tpl_val };
 
@@ -620,7 +615,7 @@ impl Compiler {
                                 let p_len = placeholder.len() + 1;
                                 self.string_literals.push((p_id, placeholder, p_len));
                                 let p_ptr = self.get_reg();
-                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* @str.{}, i32 0, i32 0\n", p_ptr, p_len, p_len, p_id));
+                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* @str.{}, i64 0, i64 0\n", p_ptr, p_len, p_len, p_id));
 
                                 // Load field from object
                                 let ptr_reg = self.get_reg();
@@ -644,7 +639,7 @@ impl Compiler {
                         
                         let final_val = if val_type == VarType::Int {
                             let s_reg = self.get_reg();
-                            self.emit(&format!("  {} = call i8* @aura_int_to_str(i32 {})\n", s_reg, val_val));
+                            self.emit(&format!("  {} = call i8* @aura_int_to_str(i64 {})\n", s_reg, val_val));
                             s_reg
                         } else { val_val };
 
@@ -672,17 +667,17 @@ impl Compiler {
                             if val.starts_with("@str.") {
                                 let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                                 let ptr_reg = self.get_reg();
-                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
+                                self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, val));
                                 let int_reg = self.get_reg();
-                                self.emit(&format!("  {} = ptrtoint i8* {} to i32\n", int_reg, ptr_reg));
-                                arg_vals.push(format!("i32 {}", int_reg));
+                                self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, ptr_reg));
+                                arg_vals.push(format!("i64 {}", int_reg));
                             } else {
                                 let int_reg = self.get_reg();
-                                self.emit(&format!("  {} = ptrtoint i8* {} to i32\n", int_reg, val));
-                                arg_vals.push(format!("i32 {}", int_reg));
+                                self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, val));
+                                arg_vals.push(format!("i64 {}", int_reg));
                             }
                         } else {
-                            arg_vals.push(format!("i32 {}", val)); 
+                            arg_vals.push(format!("i64 {}", val)); 
                         }
                     }
                     let args_str = arg_vals.join(", ");
@@ -690,7 +685,7 @@ impl Compiler {
                     // User functions use 'fn_' prefix to avoid collision with @main
                     self.emit(&format!("  {} = call i8* @fn_{}({})\n", reg, name, args_str));
                     let int_reg = self.get_reg();
-                    self.emit(&format!("  {} = ptrtoint i8* {} to i32\n", int_reg, reg));
+                    self.emit(&format!("  {} = ptrtoint i8* {} to i64\n", int_reg, reg));
                     (int_reg, VarType::Int)
                 }
             }
@@ -750,7 +745,7 @@ impl Compiler {
                         TokenType::Mul => "mul", TokenType::Div => "sdiv",
                         _ => unreachable!()
                     };
-                    self.emit(&format!("  {} = {} i32 {}, {}\n", reg, op_str, l_val, r_val));
+                    self.emit(&format!("  {} = {} i64 {}, {}\n", reg, op_str, l_val, r_val));
                     (reg, VarType::Int)
                 } else {
                     let reg = self.get_reg();
@@ -760,7 +755,7 @@ impl Compiler {
                         TokenType::Lte => "sle", TokenType::Gte => "sge",
                         _ => unreachable!()
                     };
-                    self.emit(&format!("  {} = icmp {} i32 {}, {}\n", reg, op_str, l_val, r_val));
+                    self.emit(&format!("  {} = icmp {} i64 {}, {}\n", reg, op_str, l_val, r_val));
                     (reg, VarType::Bool) 
                 }
             }
@@ -853,7 +848,7 @@ impl Compiler {
                              panic!("'this' argument found outside of class context");
                         }
                     } else {
-                        arg_defs.push(format!("i32 %arg{}", i)); 
+                        arg_defs.push(format!("i64 %arg{}", i)); 
                     }
                 }
                 let params_str = arg_defs.join(", ");
@@ -869,8 +864,8 @@ impl Compiler {
                              self.var_types.insert(arg_name.clone(), VarType::Instance(cls_name));
                          }
                     } else {
-                        self.current_output.push_str(&format!("  %{}_ptr = alloca i32\n", arg_name));
-                        self.current_output.push_str(&format!("  store i32 %arg{}, i32* %{}_ptr\n", i, arg_name));
+                        self.current_output.push_str(&format!("  %{}_ptr = alloca i64\n", arg_name));
+                        self.current_output.push_str(&format!("  store i64 %arg{}, i64* %{}_ptr\n", i, arg_name));
                         self.var_types.insert(arg_name.clone(), VarType::Int);
                     }
                 }
@@ -901,35 +896,35 @@ impl Compiler {
                     if self.is_in_function {
                         if vtype == VarType::Int {
                             let ptr = self.get_reg();
-                            self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr, val));
+                            self.emit(&format!("  {} = inttoptr i64 {} to i8*\n", ptr, val));
                             self.emit(&format!("  ret i8* {}\n", ptr));
                         } else if vtype == VarType::Bool {
                              let zext_reg = self.get_reg();
-                             self.emit(&format!("  {} = zext i1 {} to i32\n", zext_reg, val));
+                             self.emit(&format!("  {} = zext i1 {} to i64\n", zext_reg, val));
                              let ptr = self.get_reg();
-                             self.emit(&format!("  {} = inttoptr i32 {} to i8*\n", ptr, zext_reg));
+                             self.emit(&format!("  {} = inttoptr i64 {} to i8*\n", ptr, zext_reg));
                              self.emit(&format!("  ret i8* {}\n", ptr));
                         } else if val.starts_with("@str.") {
                              let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                              let ptr_reg = self.get_reg();
-                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", ptr_reg, str_len, str_len, val));
+                             self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", ptr_reg, str_len, str_len, val));
                              self.emit(&format!("  ret i8* {}\n", ptr_reg));
                         } else {
                             self.emit(&format!("  ret i8* {}\n", val));
                         }
                     } else {
-                        // In main: use i32
+                        // In main: use i64
                         if vtype == VarType::Bool {
                              let zext_reg = self.get_reg();
-                             self.emit(&format!("  {} = zext i1 {} to i32\n", zext_reg, val));
-                             self.emit(&format!("  ret i32 {}\n", zext_reg));
+                             self.emit(&format!("  {} = zext i1 {} to i64\n", zext_reg, val));
+                             self.emit(&format!("  ret i64 {}\n", zext_reg));
                         } else {
-                             self.emit(&format!("  ret i32 {}\n", val));
+                             self.emit(&format!("  ret i64 {}\n", val));
                         }
                     }
                 } else {
                     if self.is_in_function { self.emit("  ret i8* null\n"); }
-                    else { self.emit("  ret i32 0\n"); }
+                    else { self.emit("  ret i64 0\n"); }
                 }
             }
             Stmt::VarDecl(name, expr) => {
@@ -941,10 +936,10 @@ impl Compiler {
                     } else { ("0".to_string(), VarType::Int) };
                     
                     let llvm_type = match elem_vtype {
-                        VarType::Int => "i32",
+                        VarType::Int => "i64",
                         VarType::Str => "i8*",
                         VarType::Bool => "i1",
-                        _ => "i32"
+                        _ => "i64"
                     };
 
                     self.emit(&format!("  %{}_ptr = alloca [{} x {}]\n", name, len, llvm_type));
@@ -953,14 +948,14 @@ impl Compiler {
                     for (i, el) in elements.iter().enumerate() {
                         let (val, _) = if i == 0 { (first_val.clone(), elem_vtype.clone()) } else { self.compile_expr(el) };
                         let ptr_reg = self.get_reg();
-                        self.emit(&format!("  {} = getelementptr inbounds [{} x {}], [{} x {}]* %{}_ptr, i32 0, i32 {}\n", 
+                        self.emit(&format!("  {} = getelementptr inbounds [{} x {}], [{} x {}]* %{}_ptr, i64 0, i64 {}\n", 
                             ptr_reg, len, llvm_type, len, llvm_type, name, i));
                         
                         // String ise literal PTR'sini almamiz gerekebilir (print_str logic gibi)
                         let store_val = if elem_vtype == VarType::Str && val.starts_with("@str.") {
                             let str_len = self.string_literals.iter().find(|(id, _, _)| format!("@str.{}", id) == val).unwrap().2;
                             let reg = self.get_reg();
-                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i32 0, i32 0\n", reg, str_len, str_len, val));
+                            self.emit(&format!("  {} = getelementptr inbounds [{} x i8], [{} x i8]* {}, i64 0, i64 0\n", reg, str_len, str_len, val));
                             reg
                         } else { val };
 
@@ -977,8 +972,8 @@ impl Compiler {
                              }
                         },
                         VarType::Int => {
-                             self.emit(&format!("  %{}_ptr = alloca i32\n", name));
-                             self.emit(&format!("  store i32 {}, i32* %{}_ptr\n", val, name));
+                             self.emit(&format!("  %{}_ptr = alloca i64\n", name));
+                             self.emit(&format!("  store i64 {}, i64* %{}_ptr\n", val, name));
                         },
                         VarType::Str => {
                              self.emit(&format!("  %{}_ptr = alloca i8*\n", name));
@@ -997,7 +992,7 @@ impl Compiler {
                  let (val, vtype) = self.compile_expr(expr);
                  // Assuming var already exists and type matches
                  match vtype {
-                     VarType::Int => { self.emit(&format!("  store i32 {}, i32* %{}_ptr\n", val, name)); }
+                     VarType::Int => { self.emit(&format!("  store i64 {}, i64* %{}_ptr\n", val, name)); }
                      VarType::Str => { self.emit(&format!("  store i8* {}, i8** %{}_ptr\n", val, name)); }
                      VarType::Bool => { self.emit(&format!("  store i1 {}, i1* %{}_ptr\n", val, name)); }
                      VarType::Instance(cls) => {
@@ -1087,32 +1082,32 @@ impl Compiler {
         let mut decls = HashSet::new();
         for sym in &self.required_symbols {
             match sym.as_str() {
-                "printf" => decls.insert("declare i32 @printf(i8*, ...)"),
-                "scanf" => decls.insert("declare i32 @scanf(i8*, ...)"),
-                "malloc" => decls.insert("declare i8* @malloc(i32)"),
+                "printf" => decls.insert("declare i64 @printf(i8*, ...)"),
+                "scanf" => decls.insert("declare i64 @scanf(i8*, ...)"),
+                "malloc" => decls.insert("declare i8* @malloc(i64)"),
                 "free" => decls.insert("declare void @free(i8*)"),
-                "atoi" => decls.insert("declare i32 @atoi(i8*)"),
-                "strlen" => decls.insert("declare i32 @strlen(i8*)"),
+                "atoi" => decls.insert("declare i64 @atoi(i8*)"),
+                "strlen" => decls.insert("declare i64 @strlen(i8*)"),
                 "strstr" => decls.insert("declare i8* @strstr(i8*, i8*)"), // Re-added for the new dispatcher
-                "accept" => decls.insert("declare i32 @accept(i32, i8*, i32*)"),
-                "recv" => decls.insert("declare i32 @recv(i32, i8*, i32, i32)"),
-                "send" => decls.insert("declare i32 @send(i32, i8*, i32, i32)"),
-                "closesocket" => decls.insert("declare i32 @closesocket(i32)"),
-                "close" => decls.insert("declare i32 @close(i32)"),
-                "system" => decls.insert("declare i32 @system(i8*)"),
-                "memset" => decls.insert("declare i8* @memset(i8*, i32, i32)"),
+                "accept" => decls.insert("declare i64 @accept(i64, i8*, i64*)"),
+                "recv" => decls.insert("declare i64 @recv(i64, i8*, i64, i64)"),
+                "send" => decls.insert("declare i64 @send(i64, i8*, i64, i64)"),
+                "closesocket" => decls.insert("declare i64 @closesocket(i64)"),
+                "close" => decls.insert("declare i64 @close(i64)"),
+                "system" => decls.insert("declare i64 @system(i8*)"),
+                "memset" => decls.insert("declare i8* @memset(i8*, i64, i64)"),
                 // --- AURA RUNTIME INTERFACE ---
-                "aura_net_setup" => decls.insert("declare i32 @aura_net_setup(i32)"),
-                "aura_close_socket" => decls.insert("declare void @aura_close_socket(i32)"),
-                "aura_print_int" => decls.insert("declare void @aura_print_int(i32)"),
+                "aura_net_setup" => decls.insert("declare i64 @aura_net_setup(i64)"),
+                "aura_close_socket" => decls.insert("declare void @aura_close_socket(i64)"),
+                "aura_print_int" => decls.insert("declare void @aura_print_int(i64)"),
                 "aura_print_str" => decls.insert("declare void @aura_print_str(i8*)"),
-                "aura_str_contains" => decls.insert("declare i32 @aura_str_contains(i8*, i8*)"),
+                "aura_str_contains" => decls.insert("declare i64 @aura_str_contains(i8*, i8*)"),
                 "aura_str_find" => decls.insert("declare i8* @aura_str_find(i8*, i8*)"),
                 "aura_mvc_register" => decls.insert("declare void @aura_mvc_register(i8*, i8*)"),
-                "aura_mvc_serve" => decls.insert("declare void @aura_mvc_serve(i32, i8*)"),
+                "aura_mvc_serve" => decls.insert("declare void @aura_mvc_serve(i64, i8*)"),
                 "aura_read_file" => decls.insert("declare i8* @aura_read_file(i8*)"),
                 "aura_str_replace" => decls.insert("declare i8* @aura_str_replace(i8*, i8*, i8*)"),
-                "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i32)"),
+                "aura_int_to_str" => decls.insert("declare i8* @aura_int_to_str(i64)"),
                 "aura_render_field" => decls.insert("declare i8* @aura_render_field(i8*, i8*, i64)"),
                 _ => false, // User function or unknown
             };
@@ -1122,7 +1117,7 @@ impl Compiler {
             header.push_str(&format!("{}\n", d));
         }
 
-        header.push_str("declare void @llvm.memset.p0i8.i32(i8*, i8, i32, i1)\n");
+        header.push_str("declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)\n");
         
         header.push_str("@fmt_num = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\"\n");
         header.push_str("@fmt_str = private unnamed_addr constant [4 x i8] c\"%s\\0A\\00\"\n");
@@ -1146,14 +1141,15 @@ impl Compiler {
         header.push_str("\n");
         header.push_str(&self.output); // Functions
         
-        header.push_str("\ndefine i32 @main() {\nentry:\n");
+        header.push_str("\ndefine i64 @main() {\nentry:\n");
         if self.target_os == TargetOs::Windows {
-            header.push_str("  call i32 @system(i8* getelementptr inbounds ([17 x i8], [17 x i8]* @cmd_chcp, i32 0, i32 0))\n");
+            header.push_str("  call i64 @system(i8* getelementptr inbounds ([17 x i8], [17 x i8]* @cmd_chcp, i64 0, i64 0))\n");
         }
         
         header.push_str(&self.main_body);
-        header.push_str("  ret i32 0\n}\n");
+        header.push_str("  ret i64 0\n}\n");
         
         header
     }
 }
+
